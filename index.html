@@ -54,7 +54,7 @@ input,select,textarea{width:100%;padding:10px;border:1px solid var(--line);borde
 const TABS=[['cuotas','Cuotas'],['prod','Productos'],['ventas','Ventas'],['cli','Clientes'],['gan','Ganancias'],['ped','Pedidos'],['cat','Link cliente']];
 /* ====== PEGÁ ACÁ TU CONFIG DE FIREBASE (Configuración del proyecto > Tus apps > Web). Ejemplo: {apiKey:"...",authDomain:"...",projectId:"...",appId:"..."} ====== */
 const FIREBASE_CONFIG={apiKey:"AIzaSyA7oAT5mcof11abtCUIFDTSJI2b9R141zQ",authDomain:"distribuidora-md-f9f95.firebaseapp.com",projectId:"distribuidora-md-f9f95",storageBucket:"distribuidora-md-f9f95.firebasestorage.app",messagingSenderId:"269066695927",appId:"1:269066695927:web:2ec3d47754f910ca934ff2"};
-const ADMINS=['joha461@gmail.com']; // emails que pueden entrar al panel, ej: ['vos@mail.com','hermana@mail.com']
+const ADMINS=['joha461@gmail.com','damianirala0727@gmail.com']; // emails que pueden entrar al panel, ej: ['vos@mail.com','hermana@mail.com']
 const IA_URL='https://ia-ventas.joha461.workers.dev'; // ← acá va la dirección de tu servidor de IA (Cloudflare), ej: 'https://ia-ventas.algo.workers.dev'
 let tab='cuotas', fb=null;
 const S={config:{recargo:.03,colchon:.07,anticipo:.4},products:[],sales:[],expenses:[],leads:[],receipts:[]};
@@ -211,8 +211,12 @@ function payView(tok){
   fb.fs.onSnapshot(fb.fs.doc(fb.db,'pay',tok),x=>{p=x.exists()?x.data():null;draw()},()=>{$('pv').innerHTML='<div class="card">No se pudo cargar tu cuenta.</div>'});
   fb.fs.getDoc(fb.fs.doc(fb.db,'catalog','_cfg')).then(x=>{cfg=x.data()||{};draw()}).catch(()=>{});
 }
-function loginView(msg){$('nav').style.display='none';$('app').innerHTML=`<div class="card"><h2>INGRESAR</h2><label>Email</label><input id="le" type="email"><label>Contraseña</label><input id="lp" type="password"><button class="btn g" id="lgo">Entrar</button><p class="note neg" id="lm">${msg||''}</p></div>`;
-  $('lgo').onclick=async()=>{try{await fb.au.signInWithEmailAndPassword(fb.auth,$('le').value.trim(),$('lp').value)}catch(e){$('lm').textContent='Email o contraseña incorrectos'}}}
+function loginView(msg){$('nav').style.display='none';$('app').innerHTML=`<div class="card"><h2>INGRESAR</h2><label>Email</label><input id="le" type="email" autocomplete="username"><label>Contraseña</label><input id="lp" type="password" autocomplete="current-password"><label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:.8rem"><input id="lsh" type="checkbox" style="width:auto;margin:0"> Mostrar contraseña</label><button class="btn g" id="lgo">Entrar</button> <button class="btn x" id="lrs">Olvidé mi contraseña</button><p class="note neg" id="lm">${msg||''}</p></div>`;
+  $('lsh').onchange=()=>{$('lp').type=$('lsh').checked?'text':'password'};
+  const go=async()=>{try{await fb.au.signInWithEmailAndPassword(fb.auth,$('le').value.trim(),$('lp').value)}catch(e){$('lm').textContent='Email o contraseña incorrectos'}};
+  $('lgo').onclick=go;$('lp').onkeydown=e=>{if(e.key==='Enter')go()};
+  $('lrs').onclick=async()=>{const m=$('le').value.trim();if(!m){$('lm').textContent='Escribí tu email arriba y tocá "Olvidé mi contraseña" de nuevo.';return}
+    try{await fb.au.sendPasswordResetEmail(fb.auth,m);$('lm').textContent='Si ese email tiene cuenta, te mandamos un correo para crear una contraseña nueva. Revisá también spam.'}catch(e){$('lm').textContent='No se pudo enviar el correo. Revisá que el email esté bien escrito.'}}}
 
 function bind(){
   const on=(id,f)=>{const e=$(id);if(e)e.onclick=f};
