@@ -171,7 +171,9 @@ function build(){nav();const a=$('app');
     <label>Producto</label><select id="cp"></select>
     <div id="cres" style="margin-top:12px"></div>
     <p class="note">Esta pantalla se la podés mostrar al cliente: no muestra costos ni ganancias.</p></div>`;
-  if(tab==='prod')a.innerHTML=`<div class="card"><h2>CARGAR DESDE UN MENSAJE</h2><p class="note" style="margin:0 0 6px">Subí la captura de lo que te manda la distribuidora (foto + nombre + precio) y la app lee el texto, arma el producto, te calcula la ganancia y prepara la foto. O pegá el texto abajo.</p><label>📷 Captura o foto de la distribuidora</label><input id="mimg" type="file" accept="image/*"><textarea id="mtx" rows="5" placeholder="Pegá acá el mensaje de WhatsApp" style="margin-top:8px"></textarea><button class="btn g" id="mleer" type="button">✨ Leer mensaje</button><div id="mres" style="margin-top:8px"></div></div>
+  if(tab==='prod')a.innerHTML=`<div class="card"><h2>CARGAR DESDE UN MENSAJE</h2><p class="note" style="margin:0 0 6px">Subí la captura de lo que te manda la distribuidora (foto + nombre + precio) y la app lee el texto, arma el producto, te calcula la ganancia y prepara la foto. O pegá el texto abajo.</p><label>📷 Captura o foto de la distribuidora</label><input id="mimg" type="file" accept="image/*"><div class="row" style="margin-top:8px"><div><label>Precios del mensaje en</label><select id="mmon"><option value="auto">Detectar solo</option><option value="usd">Dólares (US$)</option><option value="ars">Pesos</option></select></div><div><label>Dólar</label><select id="mdt"><option value="blue">Blue</option><option value="bolsa">MEP</option><option value="oficial">Oficial</option></select></div></div>
+    <label>Cotización a usar (1 US$ = $…, la podés cambiar)</label><div class="row" style="grid-template-columns:1fr auto"><input id="mdol" type="number" inputmode="decimal" placeholder="Buscando…"><button class="btn s" id="mdref" type="button" style="margin:0">↻ Actualizar</button></div><p class="note" id="mdn" style="margin-top:4px"></p>
+    <textarea id="mtx" rows="5" placeholder="Pegá acá el mensaje de WhatsApp" style="margin-top:8px"></textarea><button class="btn g" id="mleer" type="button">✨ Leer mensaje</button><div id="mres" style="margin-top:8px"></div></div>
     <div class="card"><h2>NUEVO PRODUCTO</h2>
     <label>Nombre</label><input id="pn" placeholder="Ventilador de pie 20&quot;">
     <label>Distribuidora (dónde lo compraste)</label><input id="pdi" list="dl-dist" placeholder="Opcional" autocomplete="off">
@@ -309,13 +311,16 @@ function bind(){
   if($('mleer')){_mi=[];if($('pm'))$('pm').addEventListener('input',drawM)}
   const mi=$('mimg');if(mi)mi.onchange=async()=>{const f=mi.files[0];if(!f)return;_shot=null;
     $('mres').innerHTML='<p class="note" id="mpr">📷 Leyendo la captura… (puede tardar unos segundos)</p>';
-    try{_shot=await recortar(f);const t=limpiarOCR(await ocr(await shrink(f,1600,.9),p=>{const e=$('mpr');if(e)e.textContent='📷 Leyendo la captura… '+p+'%'}));
+    try{_shot=await recortar(f);_shotUrl=await shrink(f,1000,.8);const pg=p=>{const e=$('mpr');if(e)e.textContent='📷 Leyendo la captura… '+p+'%'};let t=limpiarOCR(await ocr(await paraOCR(f,true),pg));if(!/\$\s*\d/.test(t))t=limpiarOCR(await ocr(await paraOCR(f,false),pg));
       if(!t.trim()){$('mres').innerHTML='<p class="neg note">No pude leer texto en la imagen. Probá con otra captura o pegá el texto.</p>';return}
       $('mtx').value=t;$('mleer').click()}
     catch(e){$('mres').innerHTML='<p class="neg note">No pude leer la imagen. Revisá tu conexión o pegá el texto a mano.</p>'}};
+  if($('mdol')){const dd=async()=>{const c=$('mdt').value;$('mdn').textContent='Buscando cotización…';try{const r=await (await fetch('https://dolarapi.com/v1/dolares/'+c)).json();if(!r.venta)throw 0;$('mdol').value=r.venta;$('mdn').textContent='Dólar '+$('mdt').options[$('mdt').selectedIndex].text+' venta: $'+r.venta+' (actualizado '+new Date(r.fechaActualizacion||Date.now()).toLocaleDateString('es-AR')+'). Si no es la que usás, escribí otra.'}catch(e){$('mdn').textContent='No pude traer la cotización: escribila a mano.'}drawM()};
+    $('mdt').onchange=dd;$('mdref').onclick=dd;$('mdol').oninput=drawM;$('mmon').onchange=()=>{if(_mi.length&&$('mtx').value.trim())$('mleer').click()};dd()}
   on('mleer',async()=>{const t=$('mtx').value.trim();if(!t)return;const b=$('mleer');b.disabled=true;$('mres').innerHTML='<p class="note">✨ Leyendo el mensaje…</p>';
-    let it=[];try{if(fb&&fb.fn){const r=await ia('mensaje',{text:t});it=r.items||[]}}catch(e){}
-    if(!it.length)it=leerMsg(t);_mi=it;drawM();b.disabled=false});
+    let it=leerLista(t);
+    if(it.length<2){it=[];try{if(fb&&fb.fn){const r=await ia('mensaje',{text:t});it=r.items||[]}}catch(e){}if(!it.length)it=leerMsg(t)}
+    _mi=aplicarMoneda(it);drawM();b.disabled=false});
   const vf=$('vfr');if(vf){const fl=()=>{$('vdp').innerHTML=dpOpts(vf.value);$('vdl').textContent=vf.value==='w'?'Día de la semana':'Período de pago';$('vddw').style.display=vf.value==='w'?'none':''};vf.onchange=fl;fl()}
   const pf=$('pf');if(pf)pf.onchange=async()=>{fotoIA='';if($('pprev'))$('pprev').innerHTML='';const f=pf.files[0];if($('pia'))$('pia').style.display=f?'':'none';if(!f)return;if(!(fb&&fb.fn)){$('pmsg').textContent='La IA todavía no está configurada.';return}
     $('pmsg').textContent='✨ La IA está mirando la foto… (puede tardar unos segundos)';
@@ -406,15 +411,31 @@ function leerMsg(t){const L=t.split(/\n/).map(x=>x.trim()).filter(Boolean),pr=/\
   let costo=null;for(const l of L)if(/contado|efectivo/i.test(l)&&val(l)){costo=val(l);break}
   if(!costo)for(const l of L)if(val(l)){costo=val(l);break}
   const rest=L.filter(l=>!pr.test(l));return[{nombre:(rest[0]||'').slice(0,80),descripcion:rest.slice(1).join(' ').slice(0,250),costo}]}
-let _mi=[],_shot=null;
+let _mi=[],_shot=null,_shotUrl='';
 /* --- captura de la distribuidora: OCR + recorte de la foto --- */
 async function ocr(src,prog){if(!window.Tesseract)await new Promise((ok,no)=>{const t=document.createElement('script');t.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';t.onload=ok;t.onerror=no;document.head.appendChild(t)});
   const r=await Tesseract.recognize(src,'spa',{logger:m=>{if(m.status==='recognizing text')prog(Math.round(m.progress*100))}});return r.data.text}
+async function paraOCR(f,umbral){const u=await shrink(f,1600,.92),i=await new Promise((ok,no)=>{const m=new Image();m.onload=()=>ok(m);m.onerror=no;m.src=u}),c=document.createElement('canvas');c.width=i.width;c.height=i.height;const g=c.getContext('2d');g.drawImage(i,0,0);
+  const im=g.getImageData(0,0,c.width,c.height),d=im.data;for(let p=0;p<d.length;p+=4){const v=umbral?(Math.min(d[p],d[p+1],d[p+2])>228?0:255):Math.round(d[p]*.3+d[p+1]*.59+d[p+2]*.11);d[p]=d[p+1]=d[p+2]=v;d[p+3]=255}g.putImageData(im,0,0);return c.toDataURL('image/png')}
+const bonito=s=>s.replace(/^[^A-Za-zÁÉÍÓÚÑ0-9]+/,'').replace(/^[A-Za-z0-9]\s+(?=[A-Za-zÁÉÍÓÚÑ]{3,})/,'').replace(/\b([2-5])9\b/g,'$1g').replace(/\b(\d{2,4})9b\b/gi,'$1gb').replace(/[|=_~]+/g,' ').replace(/[A-ZÁÉÍÓÚÑ]{2,}/g,w=>w[0]+w.slice(1).toLowerCase()).replace(/\s+/g,' ').trim();
+function leerLista(t){const pr=/\$\s*(\d[\d.,]*)/,L=t.split(/\n/).map(x=>x.trim()).filter(Boolean),out=[];let head='',last='';
+  for(const l of L){const m=pr.exec(l);
+    if(!m){if(!out.length&&!head&&!/\d/.test(l)&&l.length>3){head=l;last='';continue}last=l;continue}
+    let nm=l.slice(0,m.index).trim()||last;last='';nm=bonito(nm);if(nm.replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]/g,'').length<3)continue;
+    const raw=m[1],v=/^\d{1,3}(\.\d{3})+$/.test(raw)?parseInt(raw.replace(/\./g,'')):parseInt(raw.replace(/[^\d]/g,''));if(!v)continue;
+    if(head&&!out.length)head=head.replace(/\s*[\/|]\s*/g,' / ');
+    out.push({nombre:nm,descripcion:'',costo:v,_h:head})}
+  const hw=(head||'').split(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]+/).filter(w=>w.length>2);
+  if(hw.length)out.forEach(x=>{if(!hw.some(w=>nz(x.nombre).includes(nz(w))))x.nombre=bonito(hw[0])+' '+x.nombre});
+  out.forEach(x=>delete x._h);return out}
+function aplicarMoneda(it){const mo=$('mmon')?$('mmon').value:'auto',vs=it.map(x=>x.usd||x.costo).filter(Boolean).sort((a,b)=>a-b),med=vs.length?vs[Math.floor(vs.length/2)]:0,usd=mo==='usd'||(mo==='auto'&&med>0&&med<3000);
+  return it.map(x=>{const v=x.usd||x.costo;if(!v||!usd)return x;let u=v;if(u>2000&&String(u).length>=5)u=parseInt(String(u).slice(0,3));return{...x,usd:u,costo:null}})}
+const dolar=()=>Number($('mdol')&&$('mdol').value)||0;
 function limpiarOCR(t){const junk=l=>/^(hoy|ayer)\b|\d{1,2}:\d{2}|responder/i.test(l)||l.replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ0-9]/g,'').length<3;
   let L=t.replace(/\bS(?=\s?\d{1,3}\.\d{3})/g,'$').split(/\n/).map(x=>x.trim()).filter(x=>x&&!junk(x));
   const caps=l=>{const a=l.replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]/g,'');return a.length>=3&&a.replace(/[^A-ZÁÉÍÓÚÑ]/g,'').length/a.length>.7};
   const i=L.findIndex(l=>caps(l)&&l.length>=8);if(i>0)L=L.slice(i);
-  if(L.length>1&&caps(L[1])&&L[1].length<=18&&!/\$/.test(L[1])){L[0]+=' '+L[1];L.splice(1,1)}
+  if(L.length>1&&caps(L[1])&&L[1].length<=18&&!/[\$\d]/.test(L[1])){L[0]+=' '+L[1];L.splice(1,1)}
   return L.join('\n')}
 async function recortar(f){try{const i=await loadImg(f),k=Math.min(1,400/i.height),c=document.createElement('canvas');c.width=Math.max(1,Math.round(i.width*k));c.height=Math.max(1,Math.round(i.height*k));
     const g=c.getContext('2d');g.drawImage(i,0,0,c.width,c.height);const d=g.getImageData(0,0,c.width,c.height).data;let best=[0,0],s=-1;
@@ -423,21 +444,18 @@ async function recortar(f){try{const i=await loadImg(f),k=Math.min(1,400/i.heigh
     if(best[1]-best[0]<c.height*.2)return f;
     const y0=Math.round(best[0]/k),h=Math.min(i.height-y0,Math.round((best[1]-best[0])/k)),o=document.createElement('canvas');o.width=i.width;o.height=h;o.getContext('2d').drawImage(i,0,y0,i.width,h,0,0,i.width,h);
     return await new Promise(ok=>o.toBlob(b=>ok(b?new File([b],'producto.jpg',{type:'image/jpeg'}):f),'image/jpeg',.9))}catch(e){return f}}
-function drawM(){const el=$('mres');if(!el)return;const m=num('pm')||0;
-  el.innerHTML=_mi.map((x,i)=>{const c=x.costo,p=c?{cost:c,margin:m}:null;
-    return `<div class="item" style="align-items:flex-start"><div><b>${esc(x.nombre)}</b><small>${esc(x.descripcion||'')}</small>`+(p?`<small>Costo ${money(c)} · Contado ${money(contado(p))} · ganancia ${money(contado(p)-c)}</small>`+NS.map(n=>{const t=financed(p,n);return `<small>${n} cuotas de ${money(t/n)} · total ${money(t)} · ganancia ${money(t-c)}</small>`}).join(''):'<small class="neg">No encontré el precio: cargalo a mano.</small>')+`</div><button class="btn s g" data-mu="${i}" type="button">Usar</button></div>`}).join('');
-  el.querySelectorAll('[data-mu]').forEach(b=>b.onclick=()=>{const x=_mi[b.dataset.mu];$('pn').value=x.nombre;$('pc').value=x.costo||'';$('pd').value=x.descripcion||'';$('pmsg').textContent='✔ Cargado desde el mensaje. Agregá la foto, revisá y guardá.';
-    if(_shot){try{const dt=new DataTransfer();dt.items.add(_shot);$('pf').files=dt.files;fotoIA='';$('pia').style.display='';$('pprev').innerHTML='';
+function drawM(){const el=$('mres');if(!el)return;const m=num('pm')||0,dl=dolar(),lista=_mi.length>1;
+  const cst=x=>x.usd?(dl?Math.round(x.usd*dl):0):x.costo;
+  el.innerHTML=(_mi.some(x=>x.usd)&&!dl?'<p class="neg note">Falta la cotización del dólar: escribila arriba para ver los precios en pesos.</p>':'')+_mi.map((x,i)=>{const c=cst(x),p=c?{cost:c,margin:m}:null;
+    return `<div class="item" style="align-items:flex-start"><div><b>${esc(x.nombre)}</b><small>${esc(x.descripcion||'')}</small>`+(x.usd?`<small>Lista: US$ ${x.usd}${dl?' × $'+dl.toLocaleString('es-AR')+' = <b>'+money(c)+'</b> (tu costo)':''}</small>`:'')+(p?`<small>${x.usd?'':'Costo '+money(c)+' · '}Contado ${money(contado(p))} · ganancia ${money(contado(p)-c)}</small>`+NS.map(n=>{const t=financed(p,n);return `<small>${n} cuotas de ${money(t/n)} · total ${money(t)} · ganancia ${money(t-c)}</small>`}).join(''):'<small class="neg">No encontré el precio: cargalo a mano.</small>')+`</div><div style="display:flex;flex-direction:column;gap:4px"><button class="btn s g" data-mu="${i}" type="button">Usar</button>${p?`<button class="btn s" data-mp="${i}" type="button">🎨 Prompt</button>`:''}</div></div>`}).join('');
+  el.querySelectorAll('[data-mp]').forEach(b=>b.onclick=()=>{const x=_mi[b.dataset.mp],c=cst(x);promptGPT({name:x.nombre,cost:c,margin:m,photo:_shotUrl,nota:_shotUrl?'La imagen que adjunto es una captura de la lista del proveedor con varios modelos: usá SOLO "'+x.nombre+'" (tomá el equipo/caja de ese modelo). No incluyas otros modelos, ni los precios en dólares de la captura.':''})});
+  el.querySelectorAll('[data-mu]').forEach(b=>b.onclick=()=>{const x=_mi[b.dataset.mu],c=cst(x);$('pn').value=x.nombre;$('pc').value=c||'';$('pd').value=x.descripcion||'';$('pmsg').textContent='✔ Cargado desde el mensaje'+(x.usd?' (US$ '+x.usd+' pasados a pesos)':'')+'. Agregá la foto, revisá y guardá.';
+    if(_shot&&!lista){try{const dt=new DataTransfer();dt.items.add(_shot);$('pf').files=dt.files;fotoIA='';$('pia').style.display='';$('pprev').innerHTML='';
       if(fb&&fb.fn){$('pmsg').textContent='✔ Datos cargados. ✨ Armando la foto con IA…';setTimeout(()=>$('pmej').click(),300)}else $('pmsg').textContent='✔ Datos cargados y foto recortada de la captura. Revisá y guardá.'}catch(e){}}
+    else if(lista)$('pmsg').textContent+=' La captura tiene varios modelos: tocá "🎨 Prompt" para armar la foto en ChatGPT.';
     $('pn').scrollIntoView({behavior:'smooth',block:'center'})})}
-function cuotasTxt(p){return '*'+p.name+'*\n'+(p.desc?p.desc+'\n':'')+'\nContado: '+money(contado(p))+'\n\nEn cuotas:\n'+NS.map(n=>{const t=financed(p,n);return '• '+n+' cuotas de '+money(t/n)}).join('\n')+'\n\nLa 1ª cuota se paga hoy y las demás una por mes.'}
-async function shareCuotas(p,how){const t=cuotasTxt(p),wa=()=>window.open('https://wa.me/?text='+encodeURIComponent(t),'_blank');
-  if(how==='wa')return wa();
-  try{const d={text:t,title:p.name};if(p.photo){const b=await (await fetch(p.photo)).blob(),f=new File([b],'producto.jpg',{type:b.type||'image/jpeg'});if(navigator.canShare&&navigator.canShare({files:[f]}))d.files=[f]}
-    if(navigator.share){await navigator.share(d);return}}catch(e){if(e&&e.name==='AbortError')return}
-  wa()}
 function promptGPT(p){const L=NS.map(n=>{const t=financed(p,n);return '- '+n+' cuotas de '+money(t/n)}).join('\n');
-  const t=`Creá una imagen publicitaria vertical (formato historia de WhatsApp/Instagram, 1080x1920) para vender este producto: ${p.name}.\nUsá la foto que te adjunto como referencia y mantené el producto idéntico (forma, colores y logo).\nFondo moderno y limpio, buena iluminación, estilo catálogo profesional.\nIncluí este texto, bien legible y sin errores de ortografía:\nTítulo: ${p.name}\nPRECIO DE CONTADO: ${money(contado(p))}\nO EN CUOTAS:\n${L}\nAbajo: "Consultá por WhatsApp".`;
+  const t=`Creá una imagen publicitaria vertical (formato historia de WhatsApp/Instagram, 1080x1920) para vender este producto: ${p.name}.\nUsá la foto que te adjunto como referencia y mantené el producto idéntico (forma, colores y logo).${p.nota?'\n'+p.nota:''}\nFondo moderno y limpio, buena iluminación, estilo catálogo profesional.\nIncluí este texto, bien legible y sin errores de ortografía:\nTítulo: ${p.name}\nPRECIO DE CONTADO: ${money(contado(p))}\nO EN CUOTAS:\n${L}\nAbajo: "Consultá por WhatsApp".`;
   const b=iaModal('🎨 PROMPT PARA CHATGPT',`<p class="note">Copialo, abrí ChatGPT, pegalo y adjuntá la foto del producto.</p><textarea id="gpt" rows="10" readonly>${esc(t)}</textarea><button class="btn g" id="gpc" type="button">Copiar prompt</button>${p.photo?`<a class="btn" style="display:inline-block;text-decoration:none" download="producto.jpg" href="${p.photo}">⬇ Bajar foto</a>`:''}`);
   $('gpc').onclick=()=>{const e=$('gpt');e.select();try{navigator.clipboard.writeText(t)}catch(x){document.execCommand('copy')}$('gpc').textContent='¡Copiado!'}}
 function editProd(id){const p=S.products.find(x=>x.id===id);if(!p)return;let foto=p.photo||'',file=null,ult='m';
