@@ -44,6 +44,7 @@ input,select,textarea{width:100%;padding:10px;border:1px solid var(--line);borde
 .tag.late{background:var(--coral);color:#fff}.tag.ok{background:var(--green);color:#fff}
 .note{font-size:.72rem;color:var(--muted);margin-top:8px}
 #sync{font-size:.7rem}
+.wa{position:fixed;right:14px;bottom:calc(16px + env(safe-area-inset-bottom,0px));width:58px;height:58px;border-radius:50%;background:#25D366;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px #0005;z-index:20}
 </style>
 </head>
 <body>
@@ -67,13 +68,13 @@ const num=id=>Number($(id).value)||0;
 /* ---------- datos: Firebase (en vivo) o locales ---------- */
 try{const l=JSON.parse(localStorage.getItem('cv')||'null');if(l)Object.assign(S,l)}catch(e){}
 function localSave(){try{localStorage.setItem('cv',JSON.stringify(S))}catch(e){}}
-const pubDoc=p=>({n:p.name,k:Math.round(contado(p)/100)*100,f:Object.fromEntries(NS.map(n=>[n,financed(p,n)])),ph:p.photo||'',d:p.stock>0});
+const pubDoc=p=>({n:p.name,k:Math.round(contado(p)/100)*100,f:Object.fromEntries(NS.map(n=>[n,financed(p,n)])),ph:p.photo||'',ds:p.desc||'',d:p.stock>0});
 async function pub(list){if(!fb)return;const{doc,setDoc}=fb.fs;try{await setDoc(doc(fb.db,'catalog','_cfg'),{w:S.config.wa||'',a:S.config.anticipo,pm:S.config.promoMin||5,alias:S.config.alias||'',titular:S.config.titular||''});for(const p of list)await setDoc(doc(fb.db,'catalog',p.id),pubDoc(p))}catch(e){$('sync').textContent='Error al publicar catálogo'}}
-async function pubPay(s){if(!fb||!s.tok)return;try{await fb.fs.setDoc(fb.fs.doc(fb.db,'pay',s.tok),{n:s.client.split(' ')[0],prod:s.pname,cuotas:s.n,paid:s.paid,cuota:Math.round(cuotaOf(s)),total:s.total,saldo:Math.round(s.total-cobrado(s)),next:s.paid<s.n?iso(nextDue(s)):''})}catch(e){}}
+async function pubPay(s){if(!fb||!s.tok)return;try{await fb.fs.setDoc(fb.fs.doc(fb.db,'pay',s.tok),{n:s.client.split(' ')[0],prod:s.pname,cuotas:s.n,paid:s.paid,cuota:Math.round(cuotaOf(s)),total:s.total,saldo:Math.round(s.total-cobrado(s)),next:s.paid<s.n?iso(nextDue(s)):'',pun:punit(),fq:FQ[s.freq||'m']+(s.freq&&s.dp!=null?' · '+dpText(s.freq,s.dp).toLowerCase():'')})}catch(e){}}
 async function put(col,obj){
   if(col==='config'){S.config=obj}else{const i=S[col].findIndex(x=>x.id===obj.id);i<0?S[col].push(obj):S[col][i]=obj}
   if(fb){try{await fb.fs.setDoc(fb.fs.doc(fb.db,col,col==='config'?'main':obj.id),obj)}catch(e){$('sync').textContent='Error al guardar'}}else localSave();
-  if(col==='products')pub([obj]);if(col==='config')pub(S.products);if(col==='sales')pubPay(obj);
+  if(col==='products')pub([obj]);if(col==='config'){pub(S.products);S.sales.forEach(pubPay)}if(col==='sales')pubPay(obj);
   refresh();
 }
 async function del(col,id){
@@ -82,7 +83,13 @@ async function del(col,id){
   if(fb){try{await fb.fs.deleteDoc(fb.fs.doc(fb.db,col,id));if(col==='products')await fb.fs.deleteDoc(fb.fs.doc(fb.db,'catalog',id));if(col==='sales'&&old&&old.tok)await fb.fs.deleteDoc(fb.fs.doc(fb.db,'pay',old.tok))}catch(e){}}else localSave();
   refresh();
 }
-function shrink(f,m=480,q=.72){return new Promise(r=>{const i=new Image();i.onload=()=>{const k=Math.min(1,m/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);r(c.toDataURL('image/jpeg',q))};i.src=URL.createObjectURL(f)})}
+function loadImg(f){return new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=()=>no(new Error('img'));i.src=URL.createObjectURL(f)})}
+async function shrink(f,m=480,q=.72){let i;
+  try{i=await loadImg(f)}catch(e){
+    if(!/heic|heif/i.test((f.type||'')+(f.name||'')))throw e;
+    try{if(!window.heic2any)await new Promise((ok,no)=>{const t=document.createElement('script');t.src='https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js';t.onload=ok;t.onerror=no;document.head.appendChild(t)});
+      let bl=await window.heic2any({blob:f,toType:'image/jpeg',quality:.8});if(Array.isArray(bl))bl=bl[0];i=await loadImg(bl)}catch(x){throw new Error('img')}}
+  const k=Math.min(1,m/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);return c.toDataURL('image/jpeg',q)}
 
 
 /* ---------- cálculos ---------- */
@@ -100,8 +107,29 @@ const contado=p=>p.cost*(1+p.margin/100);
 const financed=(p,n,v)=>Math.round(contado(p)*coefOf(n,v)/100)*100;
 const cuotaOf=s=>s.n?(s.total-s.anticipo)/s.n:0;
 const cobrado=s=>s.anticipo+s.paid*cuotaOf(s);
-function nextDue(s){const d=new Date(s.date+'T12:00:00');return new Date(d.getFullYear(),d.getMonth()+s.paid+(s.adel?0:1),d.getDate())}
-const late=s=>s.paid<s.n&&nextDue(s)<new Date();
+const FQ={w:'Semanal',q:'Quincenal',m:'Mensual'},DW=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'],DPL={10:'Del 1 al 10',20:'Del 10 al 20',30:'Del 20 al 30'};
+const dpOpts=f=>f==='w'?[1,2,3,4,5,6,0].map(i=>`<option value="${i}">${DW[i]}</option>`).join(''):[10,20,30].map(i=>`<option value="${i}">${DPL[i]}</option>`).join('');
+const dpText=(f,v)=>f==='w'?(DW[v]||''):(v==null||v===''?'':DPL[v]||'día '+v);
+const dom=(y,m,d)=>new Date(y,m,Math.min(d,new Date(y,m+1,0).getDate()),23,59);
+/* vencimiento de la cuota k (0 = primera). Semanal: día de la semana · Quincenal: día y día+15 · Mensual: día del mes */
+function dueN(s,k){const f=s.freq||'m',b=new Date(s.date+'T23:59:00'),a=!!s.adel;if(a&&k===0)return b;const j=k+(a?0:1);
+  if(f==='w'){const dw=s.dp==null?b.getDay():s.dp,x=new Date(b);x.setDate(x.getDate()+((dw-b.getDay()+7)%7||7)+7*(j-1));return x}
+  const d=s.dp||b.getDate();if(f==='m')return dom(b.getFullYear(),b.getMonth()+j,d);
+  const p1=d>15?d-15:d,L=[];for(let m=0;L.length<j;m++){[p1,p1+15].forEach(x=>{const t=dom(b.getFullYear(),b.getMonth()+m,x);if(t>b)L.push(t)})}return L[j-1]}
+const nextDue=s=>dueN(s,s.paid);
+const daysLate=d=>Math.max(0,Math.ceil((Date.now()-d)/864e5));
+const punit=()=>S.config.pun==null?0.5:S.config.pun;
+const mora=s=>s.paid<s.n?Math.round(cuotaOf(s)*punit()/100*daysLate(nextDue(s))):0;
+const remItems=()=>{const lim=new Date();lim.setDate(lim.getDate()+(S.config.avisoDias??1));lim.setHours(23,59,59,999);return S.sales.filter(x=>x.paid<x.n&&x.phone&&nextDue(x)<=lim).sort((a,b)=>nextDue(a)-nextDue(b))};
+const remMsg=x=>{const dl=daysLate(nextDue(x)),mo=mora(x),nm=x.client.split(' ')[0],al=S.config.alias?'\nAlias: '+S.config.alias:'',lk=x.tok?'\nVer tu cuenta y pagar: '+payLink(x.tok):'';
+  return dl>0?`Hola ${nm}, tu cuota ${x.paid+1}/${x.n} de ${x.pname} venció hace ${dl} día(s). Se suman punitorios por cada día de atraso (hoy: ${money(mo)}). Total para ponerte al día: ${money(cuotaOf(x)+mo)}.${al}${lk}\n¡Gracias!`
+  :`Hola ${nm}, te recordamos que tu cuota ${x.paid+1}/${x.n} de ${x.pname} por ${money(cuotaOf(x))} vence ${(()=>{const t=iso(nextDue(x)),h=new Date(),m=new Date();m.setDate(h.getDate()+1);return t===iso(h)?'hoy':t===iso(m)?'mañana':'el '+nextDue(x).toLocaleDateString('es-AR')})()}.${al}${lk}\n¡Gracias!`};
+function remModal(){const L=remItems(),b=iaModal('🔔 AVISOS DE CUOTAS','<p>No hay cuotas para avisar hoy ni atrasadas. 🎉</p>');if(!L.length)return;
+  b.innerHTML=L.map((x,i)=>{const d=daysLate(nextDue(x));return `<div class="item" style="display:block"><b>${esc(x.client)}</b> <span class="tag ${d>0?'late':''}">${d>0?'Atrasado '+d+' d':'Vence '+nextDue(x).toLocaleDateString('es-AR')}</span>${x.avisado===iso(new Date())?' <span class="tag ok">Avisado hoy</span>':''}<textarea rows="5" id="rm${i}" style="margin:6px 0">${esc(remMsg(x))}</textarea><button class="btn s g" data-rw="${i}">Enviar por WhatsApp</button></div>`}).join('')+'<p class="note">Se abre WhatsApp con el mensaje ya escrito: solo tocás enviar. Se avisa con los días de anticipación que pongas en Productos > Ajustes.</p>';
+  b.querySelectorAll('[data-rw]').forEach(bt=>bt.onclick=()=>{const i=+bt.dataset.rw,x=L[i];window.open('https://wa.me/'+e164g(x.phone).slice(1)+'?text='+encodeURIComponent($('rm'+i).value));put('sales',{...x,avisado:iso(new Date())})})}
+function waFab(w,msg){let a=$('wafab');if(!w){if(a)a.remove();return}if(!a){a=document.createElement('a');a.id='wafab';a.className='wa';a.target='_blank';a.rel='noopener';a.setAttribute('aria-label','Hablar por WhatsApp');a.innerHTML='<svg viewBox="0 0 24 24" width="32" height="32" fill="#fff"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>';document.body.appendChild(a)}a.href='https://wa.me/'+w+'?text='+encodeURIComponent(msg||'Hola, quiero hacer una consulta')}
+const nz=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+const late=s=>s.paid<s.n&&daysLate(nextDue(s))>0;
 
 /* ---------- vistas ---------- */
 function nav(){$('nav').innerHTML=TABS.map(([k,l])=>`<button class="${k===tab?'on':''}" data-t="${k}">${l}${k==='cli'&&S.receipts.length?' ('+S.receipts.length+')':''}</button>`).join('');
@@ -117,11 +145,14 @@ function build(){nav();const a=$('app');
     <label>Nombre</label><input id="pn" placeholder="Ventilador de pie 20&quot;">
     <div class="row"><div><label>Costo</label><input id="pc" type="number" inputmode="numeric"></div><div><label>Margen %</label><input id="pm" type="number" value="40"></div></div>
     <label>Stock (unidades)</label><input id="ps" type="number" value="1">
-    <label>Foto del producto (opcional)</label><input id="pf" type="file" accept="image/*"><p class="note" id="pmsg">Subí la foto y la IA te sugiere el nombre.</p>
+    <label>Foto del producto (opcional)</label><input id="pf" type="file" accept="image/*"><p class="note" id="pmsg">Subí la foto y la IA te sugiere nombre y descripción.</p>
+    <label>Descripción (la IA la sugiere; podés editarla)</label><textarea id="pd" rows="3" placeholder="Opcional"></textarea>
     <button class="btn g" id="padd">Guardar producto</button></div>
     <div class="card"><h2>MIS PRODUCTOS</h2><div id="plist"></div></div>
     <div class="card"><h2>AJUSTES DE FINANCIACIÓN</h2>
     <label>Compras previas para la promo (plan Vencida)</label><input id="spm" type="number" value="${S.config.promoMin||5}">
+    <label>Punitorios: % por cada día de atraso (sobre la cuota)</label><input id="spun" type="number" step="0.1" value="${punit()}">
+    <label>Avisar con cuántos días de anticipación (1 = el día anterior)</label><input id="sav" type="number" value="${S.config.avisoDias??1}">
     <label>Alias para que te paguen</label><input id="sal" value="${esc(S.config.alias||'')}">
     <label>Titular de la cuenta</label><input id="stt" value="${esc(S.config.titular||'')}">
     <label>Coeficientes ADELANTADA: 1ª cuota hoy (contado × coef = total). Solo los ves vos</label>
@@ -135,6 +166,8 @@ function build(){nav();const a=$('app');
     <label>Teléfono</label><input id="vt" type="tel">
     <label>Producto</label><select id="vp"></select>
     <label>Plan</label><select id="vpl"><option value="a">Adelantada: paga la 1ª cuota hoy</option><option value="v">Vencida (promo): 1ª cuota el mes que viene</option></select>
+    <div class="row"><div><label>Pagar</label><select id="vfr"><option value="m">Mensual</option><option value="q">Quincenal</option><option value="w">Semanal</option></select></div><div><label id="vdl">Período de pago</label><select id="vdp"></select></div></div>
+    <div id="vddw"><label>Día exacto de pago (opcional, 1 al 31)</label><input id="vdd" type="number" min="1" max="31" inputmode="numeric"></div>
     <div class="row"><div><label>Cuotas</label><select id="vn">${NS.map(c=>`<option ${c===6?'selected':''}>${c}</option>`).join('')}</select></div><div><label>Anticipo extra (opcional, $)</label><input id="va" type="number" inputmode="numeric"></div></div>
     <div id="vinfo" class="note"></div>
     <button class="btn g" id="vadd">Registrar venta</button></div>`;
@@ -154,7 +187,7 @@ function build(){nav();const a=$('app');
 }
 function catView(){
   document.title='Catálogo';$('nav').style.display='none';document.querySelector('.top h1').textContent='CATÁLOGO';$('sync').textContent='';
-  $('app').innerHTML=`<div class="card"><input id="cap" type="hidden" value="0"><p style="margin:0"><b>Pagás la 1ª cuota hoy</b> y las demás una por mes, siempre del mismo valor.</p><p class="note">Los precios en cuotas incluyen el recargo por financiación.</p></div><div id="cl"><p class="note">Cargando…</p></div>
+  $('app').innerHTML=`<div class="card"><input id="bq" type="search" placeholder="🔍 ¿Qué estás buscando?" style="margin-bottom:10px"><input id="cap" type="hidden" value="0"><p style="margin:0"><b>Pagás la 1ª cuota hoy</b> y las demás semanal, quincenal o mensual, siempre del mismo valor.</p><p class="note">Los precios en cuotas incluyen el recargo por financiación.</p></div><div id="cl"><p class="note">Cargando…</p></div>
   <div class="card" id="lead"><h2>QUIERO COMPRAR</h2>
     <label>Producto</label><select id="lp2"></select>
     <label>Cuotas</label><select id="ln">${NS.map(c=>`<option ${c===6?'selected':''}>${c}</option>`).join('')}</select>
@@ -163,22 +196,23 @@ function catView(){
     <label>Dirección (calle, número, localidad)</label><input id="lad" autocomplete="street-address">
     <label>Celular con código de área (sin 0 ni 15)</label><input id="ltel" type="tel" placeholder="11 2233 4455">
     <label>Email</label><input id="lem" type="email" autocomplete="email">
+    <div class="row"><div><label>¿Cada cuánto pagás?</label><select id="lfr"><option value="m">Mensual</option><option value="q">Quincenal</option><option value="w">Semanal</option></select></div><div><label id="ldl">Período de pago</label><select id="ldp"></select></div></div>
     <div id="lstep" style="margin-top:6px"></div><p class="note neg" id="lmsg"></p><div id="recap"></div>
     <p class="note">Verificamos tu email con un link. Tus datos se usan solo para esta compra.</p></div>`;
   let items=[],cfg={a:.4,w:''},first=true;
   const sel={};
   const open={};
-  const d=()=>{const pm=cfg.pm||5,
+  const d=()=>{const q=nz($('bq').value.trim()),pm=cfg.pm||5,
       banner=`<div class="card" style="border:2px solid var(--green)"><h2>⭐ CLIENTES FRECUENTES</h2><p style="margin:0">Si ya nos compraste <b>${pm} veces o más</b>, pagás tu <b>primera cuota recién el mes que viene</b>.</p>${cfg.w?`<a class="btn g" style="display:block;text-align:center;text-decoration:none" href="https://wa.me/${esc(cfg.w)}?text=${encodeURIComponent('Hola, soy cliente frecuente y quiero consultar por la promo')}">Consultar la promo</a>`:''}</div>`;
-    const list=items.sort((a,b)=>a.n.localeCompare(b.n)).map((it,i)=>{const o=open[i];
+    const list=items.sort((a,b)=>a.n.localeCompare(b.n)).filter(it=>!q||nz(it.n+' '+(it.ds||'')).includes(q)).map((it,i)=>{const o=open[it.n];
       const rows=o?CATN.map(n=>{const f=(it.f||{})[n]||0,c=f/n,msg='Hola, me interesa: '+it.n+' en '+n+' cuotas de '+money(c)+' (pago la 1ª hoy)';
         return `<div class="item"><div><b>${n} cuotas de ${money(c)}</b><small>Hoy pagás la 1ª · Total ${money(f)}</small></div>${cfg.w?`<a class="btn s g" style="text-decoration:none" href="https://wa.me/${esc(cfg.w)}?text=${encodeURIComponent(msg)}">Elegir</a>`:''}</div>`}).join(''):'';
-      return `<div class="card"><div data-o="${i}" style="cursor:pointer">${it.ph?`<img src="${it.ph}" alt="" style="width:100%;max-height:230px;object-fit:cover;border-radius:12px;margin-bottom:10px">`:''}<h2>${esc(it.n)} <span class="tag">${it.d?'En stock':'A pedido'}</span></h2><div class="kpi" style="margin:8px 0 6px"><span>Precio de contado</span><b>${money(it.k)}</b></div><button class="btn ${o?'':'g'}" style="width:100%;margin:0 0 6px">${o?'▲ Ocultar cuotas':'Ver cuotas ▼'}</button></div>${rows}${o&&cfg.w?'<p class="note">Tocá "Elegir" y se abre WhatsApp con tu plan para hablar con nosotros.</p>':''}</div>`}).join('');
-    $('cl').innerHTML=banner+(list||'<p class="note">Todavía no hay productos.</p>');
+      return `<div class="card"><div data-o="${esc(it.n)}" style="cursor:pointer">${it.ph?`<img src="${it.ph}" alt="" style="width:100%;max-height:230px;object-fit:cover;border-radius:12px;margin-bottom:10px">`:''}<h2>${esc(it.n)} <span class="tag">${it.d?'En stock':'A pedido'}</span></h2>${it.ds?`<p style="margin:0 0 8px;color:var(--muted)">${esc(it.ds)}</p>`:''}<div class="kpi" style="margin:8px 0 6px"><span>Precio de contado</span><b>${money(it.k)}</b></div><button class="btn ${o?'':'g'}" style="width:100%;margin:0 0 6px">${o?'▲ Ocultar cuotas':'Ver cuotas ▼'}</button></div>${rows}${o&&cfg.w?'<p class="note">Tocá "Elegir" y se abre WhatsApp con tu plan para hablar con nosotros.</p>':''}</div>`}).join('');
+    $('cl').innerHTML=banner+(list||'<p class="note">'+(q?'No encontramos ese producto. Escribinos por WhatsApp y te ayudamos.':'Todavía no hay productos.')+'</p>');
     $('cl').querySelectorAll('[data-o]').forEach(e=>e.onclick=()=>{open[e.dataset.o]=!open[e.dataset.o];d()})};
-  $('cap').oninput=d;leadInit();
+  $('cap').oninput=d;$('bq').oninput=d;const lf=$('lfr');lf.onchange=()=>{$('ldp').innerHTML=dpOpts(lf.value);$('ldl').textContent=lf.value==='w'?'Día de la semana':'Período de pago'};lf.onchange();leadInit();
   fb.fs.onSnapshot(fb.fs.collection(fb.db,'catalog'),sn=>{items=[];sn.docs.forEach(x=>x.id==='_cfg'?cfg=x.data():items.push(x.data()));
-    first=false;d();fillProd(items)},()=>{$('cl').innerHTML='<p class="note">No se pudo cargar el catálogo.</p>'});
+    first=false;d();fillProd(items);waFab(cfg.w)},()=>{$('cl').innerHTML='<p class="note">No se pudo cargar el catálogo.</p>'});
 }
 const LF=['lnm','ldni','lad','ltel','lem'];
 function fillProd(items){const e=$('lp2');if(!e)return;const v=e.value;e.innerHTML=items.map(x=>`<option>${esc(x.n)}</option>`).join('');if(v)e.value=v}
@@ -192,7 +226,7 @@ async function leadInit(){
     if(!cu||!cu.emailVerified){st('<button class="btn g" id="b1">1. Verificar mi email</button>');
       $('b1').onclick=async()=>{const e=val();if(e)return say(e);try{await A.sendSignInLinkToEmail(fb.auth,v('lem'),{url:location.href.split('#')[0].split('?')[0]+'#catalogo',handleCodeInApp:true});say('Te mandamos un link a tu email. Abrilo en este mismo celular para seguir.')}catch(x){say('No se pudo enviar el email')}}}
     else{st('<p class="note">✔ Email verificado</p><button class="btn g" id="b4">3. Enviar mi solicitud</button>');
-      $('b4').onclick=async()=>{const e=val();if(e)return say(e);try{await fb.fs.setDoc(fb.fs.doc(fb.db,'leads',cu.uid+'_'+Date.now()),{uid:cu.uid,name:v('lnm'),dni:v('ldni'),addr:v('lad'),phone:e164(v('ltel')),email:cu.email,product:$('lp2').value,cuotas:$('ln').value,createdAt:Date.now(),dniOk:false});try{localStorage.removeItem('lead')}catch(x){}st('<p><b>¡Listo!</b> Recibimos tus datos. Te escribimos pronto.</p>')}catch(x){say('No se pudo enviar. Probá de nuevo.')}}}}
+      $('b4').onclick=async()=>{const e=val();if(e)return say(e);try{await fb.fs.setDoc(fb.fs.doc(fb.db,'leads',cu.uid+'_'+Date.now()),{uid:cu.uid,name:v('lnm'),dni:v('ldni'),addr:v('lad'),phone:e164(v('ltel')),email:cu.email,product:$('lp2').value,cuotas:$('ln').value,createdAt:Date.now(),dniOk:false,freq:$('lfr').value,dp:Number($('ldp').value)});try{localStorage.removeItem('lead')}catch(x){}st('<p><b>¡Listo!</b> Recibimos tus datos. Te escribimos pronto.</p>')}catch(x){say('No se pudo enviar. Probá de nuevo.')}}}}
   if(A.isSignInWithEmailLink(fb.auth,location.href)){try{await A.signInWithEmailLink(fb.auth,dr.lem||prompt('Confirmá tu email'),location.href);history.replaceState(null,'',location.pathname+'#catalogo')}catch(e){say('El link venció o no es válido. Pedí otro.')}}
   A.onAuthStateChanged(fb.auth,u=>{cu=u;step()});
 }
@@ -200,10 +234,10 @@ function payView(tok){
   document.title='Mi cuenta';$('nav').style.display='none';document.querySelector('.top h1').textContent='MI CUENTA';$('sync').textContent='';
   $('app').innerHTML='<div id="pv"><p class="note">Cargando…</p></div>';
   let p=null,cfg={},sent='';
-  const draw=()=>{if(!p){$('pv').innerHTML='<div class="card">No encontramos tu cuenta. Pedile el link de nuevo a quien te vendió.</div>';return}
-    const done=p.paid>=p.cuotas,l=!done&&p.next&&new Date(p.next+'T12:00:00')<new Date();
-    $('pv').innerHTML=`<div class="card"><h2>HOLA ${esc(p.n.toUpperCase())}</h2><p>${esc(p.prod)}</p><div class="kpis"><div class="kpi"><span>Cuotas pagadas</span><b>${p.paid} de ${p.cuotas}</b></div><div class="kpi"><span>Valor de cuota</span><b>${money(p.cuota)}</b></div><div class="kpi"><span>Te falta pagar</span><b>${money(p.saldo)}</b></div><div class="kpi"><span>Próximo vencimiento</span><b class="${l?'neg':''}">${done?'—':new Date(p.next+'T12:00:00').toLocaleDateString('es-AR')}</b></div></div>${l?'<p class="neg"><b>Tu cuota está vencida. Pagala cuanto antes.</b></p>':''}${done?'<p class="pos"><b>¡Terminaste de pagar! Gracias.</b></p>':''}</div>`+
-    (done?'':`<div class="card"><h2>CÓMO PAGAR</h2><p>Transferí <b>${money(p.cuota)}</b> a este alias:</p><div class="kpi"><span>Alias${cfg.titular?' · '+esc(cfg.titular):''}</span><b id="al">${esc(cfg.alias||'Consultá el alias por WhatsApp')}</b></div><button class="btn s" id="cp2">Copiar alias</button>
+  const draw=()=>{waFab(cfg.w,'Hola, tengo una consulta sobre mi cuenta');if(!p){$('pv').innerHTML='<div class="card">No encontramos tu cuenta. Pedile el link de nuevo a quien te vendió.</div>';return}
+    const done=p.paid>=p.cuotas,dl=done||!p.next?0:daysLate(new Date(p.next+'T23:59:00')),l=dl>0,mo=l?Math.round(p.cuota*(p.pun||0)/100*dl):0;
+    $('pv').innerHTML=`<div class="card"><h2>HOLA ${esc(p.n.toUpperCase())}</h2><p>${esc(p.prod)}${p.fq?' · pago '+esc(p.fq):''}</p><div class="kpis"><div class="kpi"><span>Cuotas pagadas</span><b>${p.paid} de ${p.cuotas}</b></div><div class="kpi"><span>Valor de cuota</span><b>${money(p.cuota)}</b></div><div class="kpi"><span>Te falta pagar</span><b>${money(p.saldo)}</b></div><div class="kpi"><span>Próximo vencimiento</span><b class="${l?'neg':''}">${done?'—':new Date(p.next+'T12:00:00').toLocaleDateString('es-AR')}</b>${l?`<div class="kpi"><span>Punitorios (${dl} días de atraso)</span><b class="neg">${money(mo)}</b></div>`:''}</div>${l?'<p class="neg"><b>Tu cuota está vencida. Se suman punitorios por cada día de atraso: pagala cuanto antes.</b></p>':''}${done?'<p class="pos"><b>¡Terminaste de pagar! Gracias.</b></p>':''}</div>`+
+    (done?'':`<div class="card"><h2>CÓMO PAGAR</h2><p>Transferí <b>${money(p.cuota+mo)}</b>${mo?' (cuota + punitorios)':''} a este alias:</p><div class="kpi"><span>Alias${cfg.titular?' · '+esc(cfg.titular):''}</span><b id="al">${esc(cfg.alias||'Consultá el alias por WhatsApp')}</b></div><button class="btn s" id="cp2">Copiar alias</button>
       <label style="margin-top:12px">Subí el comprobante de la cuota ${p.paid+1}</label><input id="rf" type="file" accept="image/*"><button class="btn g" id="rs">Enviar comprobante</button><p class="note ${sent.startsWith('✔')?'pos':'neg'}" id="rm">${sent}</p></div>`);
     if($('cp2'))$('cp2').onclick=()=>{try{navigator.clipboard.writeText(cfg.alias||'');$('cp2').textContent='¡Copiado!'}catch(e){}};
     if($('rs'))$('rs').onclick=async()=>{const f=$('rf').files[0];if(!f){$('rm').textContent='Elegí la foto del comprobante';return}
@@ -222,16 +256,22 @@ function bind(){
   const on=(id,f)=>{const e=$(id);if(e)e.onclick=f};
   ['cp','ca'].forEach(i=>{const e=$(i);if(e)e.oninput=refresh});
   ['vp','vn','va','cf','vc','vt','vpl'].forEach(i=>{const e=$(i);if(e)e.oninput=refresh});
+  const vf=$('vfr');if(vf){const fl=()=>{$('vdp').innerHTML=dpOpts(vf.value);$('vdl').textContent=vf.value==='w'?'Día de la semana':'Período de pago';$('vddw').style.display=vf.value==='w'?'none':''};vf.onchange=fl;fl()}
   const pf=$('pf');if(pf)pf.onchange=async()=>{const f=pf.files[0];if(!f)return;if(!(fb&&fb.fn)){$('pmsg').textContent='La IA todavía no está configurada.';return}
-    $('pmsg').textContent='✨ La IA está mirando la foto…';
-    try{const r=await ia('producto',{img:await shrink(f,640,.7)});const nm=r.json&&r.json.nombre||'';if(!$('pn').value.trim())$('pn').value=nm;$('pmsg').textContent=nm?'✨ Nombre sugerido por la IA: revisalo y corregilo si hace falta.':'No pude reconocer el producto. Escribí el nombre.'+(r.json&&r.json.raw?' (La IA dijo: '+r.json.raw.slice(0,90)+')':'')}
-    catch(e){$('pmsg').textContent='No se pudo leer la foto con IA. Escribí el nombre a mano.'}};
-  on('padd',async()=>{const n=$('pn').value.trim();if(!n||!num('pc'))return;const f=$('pf').files[0];put('products',{id:uid(),name:n,cost:num('pc'),margin:num('pm'),stock:num('ps'),photo:f?await shrink(f):''});$('pn').value='';$('pc').value='';$('pf').value='';$('pmsg').textContent='Subí la foto y la IA te sugiere el nombre.'});
-  on('ssave',()=>{const rr=S.config.recargo,cc=S.config.colchon,coef={},coefV={};document.querySelectorAll('.cf').forEach(i=>{const v=parseFloat(i.value),n=i.dataset.n;if(v>0&&Math.abs(v-(COEF_BASE[n]||(1+cc+rr*n/2)))>0.0004)coef[n]=v});document.querySelectorAll('.cv').forEach(i=>{const v=parseFloat(i.value),n=i.dataset.n;if(v>0&&Math.abs(v-(COEF_V[n]||1))>0.0004)coefV[n]=v});put('config',{...S.config,promoMin:num('spm')||5,alias:$('sal').value.trim(),titular:$('stt').value.trim(),coef,coefV});build()});
+    $('pmsg').textContent='✨ La IA está mirando la foto… (puede tardar unos segundos)';
+    try{const r=await ia('producto',{img:await shrink(f,640,.7)}),j=r.json||{};
+      if(!$('pn').value.trim())$('pn').value=j.nombre||'';if(!$('pd').value.trim())$('pd').value=j.descripcion||'';
+      $('pmsg').textContent=j.nombre?'✨ Sugerido por la IA: revisalo y corregilo si hace falta.':'No pude reconocer el producto. Escribí el nombre.'+(j.raw?' (La IA dijo: '+j.raw.slice(0,90)+')':'')}
+    catch(e){$('pmsg').textContent=e.message==='img'?'No pude leer esa foto. Probá con otra, o sacala de nuevo en formato JPG.':'La IA no respondió. Probá de nuevo en un momento o escribí el nombre a mano.'}};
+  on('padd',async()=>{const n=$('pn').value.trim();if(!n||!num('pc')){$('pmsg').textContent='Falta el nombre o el costo.';return}
+    const f=$('pf').files[0];let ph='';if(f){try{ph=await shrink(f)}catch(e){$('pmsg').textContent='No pude leer la foto: el producto se guardó sin foto.'}}
+    put('products',{id:uid(),name:n,cost:num('pc'),margin:num('pm'),stock:num('ps'),photo:ph,desc:$('pd').value.trim()});$('pn').value='';$('pc').value='';$('pf').value='';$('pd').value='';
+    if(ph||!f)$('pmsg').textContent='✔ Producto guardado. Subí otra foto y la IA te sugiere nombre y descripción.'});
+  on('ssave',()=>{const rr=S.config.recargo,cc=S.config.colchon,coef={},coefV={};document.querySelectorAll('.cf').forEach(i=>{const v=parseFloat(i.value),n=i.dataset.n;if(v>0&&Math.abs(v-(COEF_BASE[n]||(1+cc+rr*n/2)))>0.0004)coef[n]=v});document.querySelectorAll('.cv').forEach(i=>{const v=parseFloat(i.value),n=i.dataset.n;if(v>0&&Math.abs(v-(COEF_V[n]||1))>0.0004)coefV[n]=v});put('config',{...S.config,promoMin:num('spm')||5,pun:Math.max(0,parseFloat($('spun').value)||0),avisoDias:Math.max(0,parseInt($('sav').value)||0),alias:$('sal').value.trim(),titular:$('stt').value.trim(),coef,coefV});build()});
   on('srs',()=>{put('config',{...S.config,coef:{},coefV:{}});build()});
   on('vadd',()=>{const p=S.products.find(x=>x.id===$('vp').value);const c=$('vc').value.trim();if(!p||!c)return;
-    const n=num('vn'),v=$('vpl').value==='v';put('sales',{id:uid(),client:c,phone:$('vt').value,pid:p.id,pname:p.name,cost:p.cost,total:financed(p,n,v),anticipo:num('va'),n,adel:!v,paid:v?0:1,tok:rtok(),date:new Date().toISOString().slice(0,10)});
-    if(p.stock>0)put('products',{...p,stock:p.stock-1});$('vc').value='';$('vt').value='';$('va').value=''});
+    const n=num('vn'),v=$('vpl').value==='v',fr=$('vfr').value,xd=num('vdd');put('sales',{id:uid(),freq:fr,dp:fr==='w'?+$('vdp').value:(xd>=1&&xd<=31?xd:+$('vdp').value),client:c,phone:$('vt').value,pid:p.id,pname:p.name,cost:p.cost,total:financed(p,n,v),anticipo:num('va'),n,adel:!v,paid:v?0:1,tok:rtok(),date:new Date().toISOString().slice(0,10)});
+    if(p.stock>0)put('products',{...p,stock:p.stock-1});$('vc').value='';$('vt').value='';$('va').value='';$('vdd').value=''});
   on('kgen',()=>{put('config',{...S.config,wa:$('kw').value.replace(/\D/g,''),anticipo:S.config.anticipo});if(fb)$('sync').textContent='● Catálogo publicado'});
   on('kcopy',()=>{const t=$('kout');t.select();try{navigator.clipboard.writeText(t.value)}catch(e){document.execCommand('copy')}});
   on('gadd',()=>{if(!num('gm'))return;put('expenses',{id:uid(),desc:$('gd').value||'Gasto',amount:num('gm'),date:new Date().toISOString().slice(0,10)});$('gd').value='';$('gm').value=''});
@@ -252,10 +292,10 @@ function refresh(){
     S.sales.forEach(x=>{const k=(x.client+'|'+(x.phone||'')).toLowerCase();(by[k]=by[k]||{client:x.client,phone:x.phone,sales:[]}).sales.push(x)});
     let cl=Object.values(by).map(c=>({...c,saldo:c.sales.reduce((a,x)=>a+x.total-cobrado(x),0),late:c.sales.some(late)}));
     const nl=cl.filter(c=>c.late).length;
-    $('cbanner').innerHTML=(nl?`<p class="neg"><b>⚠ ${nl} cliente(s) atrasado(s)</b></p>`:'')+(S.receipts.length?`<p><b>${S.receipts.length} comprobante(s) para revisar</b></p>`:'');
+    const rl=remItems().length;$('cbanner').innerHTML=(rl?'<button class="btn g" id="rem" style="margin:0 0 6px;width:100%">🔔 '+rl+' aviso(s) de cuotas por vencer o atrasadas</button>':'')+(nl?`<p class="neg"><b>⚠ ${nl} cliente(s) atrasado(s)</b></p>`:'')+(S.receipts.length?`<p><b>${S.receipts.length} comprobante(s) para revisar</b></p>`:'');if($('rem'))$('rem').onclick=remModal;
     cl=cl.filter(c=>fl==='late'?c.late:fl==='debe'?c.saldo>1:fl==='pago'?c.saldo<=1:true).sort((a,b)=>b.late-a.late||b.saldo-a.saldo);
-    $('slist').innerHTML=cl.map(c=>`<div class="card"><div class="item" style="border:0;padding-top:0"><div><h2>${esc(c.client)}${c.sales.length>=(S.config.promoMin||5)?' ⭐':''}</h2><small>${esc(c.phone||'')}</small></div><div style="text-align:right"><span class="tag ${c.late?'late':c.saldo<=1?'ok':''}">${c.late?'Atrasado':c.saldo<=1?'Pagó todo':'Al día'}</span><small>Debe ${money(c.saldo)}</small></div></div>`+c.sales.map(x=>{const done=x.paid>=x.n,l=late(x),days=l?Math.floor((Date.now()-nextDue(x))/864e5):0,rs=S.receipts.filter(r=>r.sid===x.tok);
-      return `<div class="item" style="align-items:flex-start"><div><b>${esc(x.pname)}</b> <span class="tag ${done?'ok':l?'late':''}">${done?'Pagado':l?'Atrasado '+days+' d':'Al día'}</span><small>Cuota ${x.paid}/${x.n} de ${money(cuotaOf(x))} · ${done?'':'vence '+nextDue(x).toLocaleDateString('es-AR')+' · '}saldo ${money(x.total-cobrado(x))}</small>`+
+    $('slist').innerHTML=cl.map(c=>`<div class="card"><div class="item" style="border:0;padding-top:0"><div><h2>${esc(c.client)}${c.sales.length>=(S.config.promoMin||5)?' ⭐':''}</h2><small>${esc(c.phone||'')}</small></div><div style="text-align:right"><span class="tag ${c.late?'late':c.saldo<=1?'ok':''}">${c.late?'Atrasado':c.saldo<=1?'Pagó todo':'Al día'}</span><small>Debe ${money(c.saldo)}</small></div></div>`+c.sales.map(x=>{const done=x.paid>=x.n,l=late(x),days=l?daysLate(nextDue(x)):0,mo=mora(x),rs=S.receipts.filter(r=>r.sid===x.tok);
+      return `<div class="item" style="align-items:flex-start"><div><b>${esc(x.pname)}</b> <span class="tag ${done?'ok':l?'late':''}">${done?'Pagado':l?'Atrasado '+days+' d':'Al día'}</span><small>${FQ[x.freq||'m']}${x.freq&&x.dp!=null?' '+dpText(x.freq,x.dp).toLowerCase():''} · Cuota ${x.paid}/${x.n} de ${money(cuotaOf(x))} · ${done?'':'vence '+nextDue(x).toLocaleDateString('es-AR')+' · '}saldo ${money(x.total-cobrado(x))}${mo>0?' · <b class="neg">punitorios '+money(mo)+'</b>':''}</small>`+
       rs.map(r=>`<details><summary class="neg"><b>Comprobante cuota ${r.n}</b> (revisar)</summary><img src="${r.img}" alt="" style="width:100%;border-radius:10px;margin:6px 0"><button class="btn s g" data-ok="${r.id}">Aprobar</button> <button class="btn s x" data-no="${r.id}">Rechazar</button></details>`).join('')+
       `</div><div style="display:flex;flex-direction:column;gap:4px">${done?'':`<button class="btn s g" data-pay="${x.id}">+ Cuota</button>`}${x.tok?`<button class="btn s" data-lk="${x.tok}">Link de pago</button>`:''}${x.tok&&x.phone?`<a class="btn s" style="text-decoration:none;text-align:center" href="https://wa.me/${e164g(x.phone).slice(1)}?text=${encodeURIComponent('Hola '+x.client.split(' ')[0]+', acá podés ver tu cuenta y pagar tu cuota: '+payLink(x.tok))}">WhatsApp</a>`:''}<button class="btn s x" data-ds="${x.id}">Borrar</button></div></div>`}).join('')+`</div>`).join('')||'<p class="note">No hay clientes para mostrar.</p>'}
   if($('gres')){const cob=S.sales.reduce((a,s)=>a+cobrado(s),0),cst=S.sales.reduce((a,s)=>a+s.cost,0),tot=S.sales.reduce((a,s)=>a+s.total,0),
@@ -266,7 +306,7 @@ function refresh(){
     <div class="kpis" style="margin-top:8px">${k('Tu parte (50%)',neta/2,neta>=0?'pos':'neg')}${k('Parte de tu hermano (50%)',neta/2,neta>=0?'pos':'neg')}</div>
     <p class="note">${atr?`⚠ ${atr} cliente(s) con cuotas atrasadas.`:'Sin atrasos.'} Ganancia asegurada = lo cobrado por encima del costo de cada producto, menos gastos. El reparto 50/50 es un ejemplo: acordalo entre ustedes.</p></div>`}
   if($('glist'))$('glist').innerHTML=S.expenses.map(e=>`<div class="item"><div>${esc(e.desc)}<small>${e.date}</small></div><div>${money(e.amount)} <button class="btn s x" data-de="${e.id}">✕</button></div></div>`).join('');
-  if($('llist'))$('llist').innerHTML=[...S.leads].sort((a,b)=>b.createdAt-a.createdAt).map(l=>`<div class="item" style="align-items:flex-start"><div><b>${esc(l.name)}</b> <span class="tag ${l.dniOk?'ok':''}">${l.dniOk?'DNI chequeado':'DNI sin chequear'}</span><small>DNI ${esc(l.dni)} · ${esc(l.addr)}</small><small>${esc(l.product)} en ${esc(l.cuotas)} cuotas · ${new Date(l.createdAt).toLocaleDateString('es-AR')}</small><small>📱 ${esc(l.phone)} · ✉ ${esc(l.email)} ✔</small><a href="https://wa.me/${esc(String(l.phone).replace(/\D/g,''))}" style="color:var(--green);font-weight:700">Escribir por WhatsApp</a></div><div style="display:flex;flex-direction:column;gap:4px"><button class="btn s" data-dni="${l.id}">${l.dniOk?'Quitar check':'DNI ok'}</button><button class="btn s x" data-dl="${l.id}">Borrar</button></div></div>`).join('')||'<p class="note">Todavía no hay pedidos.</p>';
+  if($('llist'))$('llist').innerHTML=[...S.leads].sort((a,b)=>b.createdAt-a.createdAt).map(l=>`<div class="item" style="align-items:flex-start"><div><b>${esc(l.name)}</b> <span class="tag ${l.dniOk?'ok':''}">${l.dniOk?'DNI chequeado':'DNI sin chequear'}</span><small>DNI ${esc(l.dni)} · ${esc(l.addr)}</small><small>${esc(l.product)} en ${esc(l.cuotas)} cuotas · quiere pagar ${(FQ[l.freq]||'Mensual').toLowerCase()} ${esc(dpText(l.freq||'m',l.dp)).toLowerCase()} · ${new Date(l.createdAt).toLocaleDateString('es-AR')}</small><small>📱 ${esc(l.phone)} · ✉ ${esc(l.email)} ✔</small><a href="https://wa.me/${esc(String(l.phone).replace(/\D/g,''))}" style="color:var(--green);font-weight:700">Escribir por WhatsApp</a></div><div style="display:flex;flex-direction:column;gap:4px"><button class="btn s" data-dni="${l.id}">${l.dniOk?'Quitar check':'DNI ok'}</button><button class="btn s x" data-dl="${l.id}">Borrar</button></div></div>`).join('')||'<p class="note">Todavía no hay pedidos.</p>';
   document.querySelectorAll('[data-dni]').forEach(b=>b.onclick=()=>{const l=S.leads.find(x=>x.id===b.dataset.dni);put('leads',{...l,dniOk:!l.dniOk})});
   document.querySelectorAll('[data-dl]').forEach(b=>b.onclick=()=>del('leads',b.dataset.dl));
   document.querySelectorAll('[data-ok]').forEach(b=>b.onclick=()=>{const r=S.receipts.find(x=>x.id===b.dataset.ok),x=r&&S.sales.find(v=>v.tok===r.sid);if(x&&x.paid<x.n)put('sales',{...x,paid:x.paid+1});del('receipts',b.dataset.ok)});
@@ -280,14 +320,14 @@ function refresh(){
 }
 
 /* ====================== INTELIGENCIA ARTIFICIAL ====================== */
-async function ia(mode,data){const h={'content-type':'application/json'},u=fb.auth.currentUser;if(u)h.authorization='Bearer '+await u.getIdToken();const r=await fetch(IA_URL,{method:'POST',headers:h,body:JSON.stringify({mode,...data})});if(!r.ok)throw new Error('ia');return r.json()}
+async function ia(mode,data){const h={'content-type':'application/json'},u=fb.auth.currentUser,ac=new AbortController(),tm=setTimeout(()=>ac.abort(),45000);if(u)h.authorization='Bearer '+await u.getIdToken();try{const r=await fetch(IA_URL,{method:'POST',headers:h,body:JSON.stringify({mode,...data}),signal:ac.signal});if(!r.ok)throw new Error('ia');return await r.json()}finally{clearTimeout(tm)}}
 function iaModal(t,h){let m=$('iam');if(m)m.remove();m=document.createElement('div');m.id='iam';
   m.style.cssText='position:fixed;inset:0;z-index:50;background:#0009;display:flex;align-items:flex-end;justify-content:center';
   m.innerHTML=`<div class="card" style="width:100%;max-width:760px;max-height:85vh;overflow:auto;margin:0;border-radius:16px 16px 0 0"><h2>${t}</h2><div id="iab">${h}</div><button class="btn x" id="iax">Cerrar</button></div>`;
   document.body.appendChild(m);$('iax').onclick=()=>m.remove();return $('iab')}
 const iaErr='<p class="neg">No se pudo usar la IA ahora. Probá de nuevo.</p>';
 const iaBtn=(txt,attr,fn)=>{const c=document.createElement('button');c.className='btn s';c.setAttribute(attr,'1');c.textContent=txt;c.onclick=fn;return c};
-const iaDias=x=>late(x)?Math.floor((Date.now()-nextDue(x))/864e5):0;
+const iaDias=x=>late(x)?daysLate(nextDue(x)):0;
 const iaItem=(x,i)=>({i,nombre:x.client.split(' ')[0],producto:x.pname,nro:x.paid+1,de:x.n,monto:Math.round(cuotaOf(x)),vence:iso(nextDue(x)),dias:iaDias(x),link:x.tok?payLink(x.tok):'',alias:S.config.alias||''});
 
 /* 1) Cobranza de una venta */
@@ -302,7 +342,7 @@ async function iaCobro(x){
 /* 2) Cobranzas de hoy (todas juntas) */
 async function iaHoy(){
   const b=iaModal('✨ COBRANZAS DE HOY','<p class="note">Preparando los mensajes…</p>');
-  const fin=new Date();fin.setHours(23,59,59,999);
+  const fin=new Date();fin.setDate(fin.getDate()+(S.config.avisoDias??1));fin.setHours(23,59,59,999);
   const L=S.sales.filter(x=>x.paid<x.n&&nextDue(x)<=fin&&x.phone).sort((a,b)=>nextDue(a)-nextDue(b)).slice(0,10);
   if(!L.length){b.innerHTML='<p>Hoy no hay cuotas vencidas ni por vencer (con teléfono cargado). 🎉</p>';return}
   try{const r=await ia('cobranza_lote',{items:L.map(iaItem)});
@@ -358,8 +398,9 @@ function iaHooks(){
   const cb=$('cbanner');if(cb&&!cb.querySelector('[data-iah]')){const c=iaBtn('✨ Cobranzas de hoy','data-iah',iaHoy);c.classList.add('g');c.style.marginBottom='6px';cb.appendChild(c)}
   const g=$('gres');if(g&&!g.querySelector('[data-ian]')){const c=iaBtn('✨ Analizar con IA','data-ian',iaAnalisis);c.classList.add('g');g.appendChild(c)}
 }
-const _refresh=refresh;refresh=function(){_refresh();if(fb&&fb.fn)iaHooks()};
-const _catView=catView;catView=function(){_catView();iaChat()};
+let _rs=0;const _refresh=refresh;refresh=function(){_refresh();if(fb&&fb.fn)iaHooks();
+  if(!_rs&&fb&&fb.auth.currentUser&&S.sales.length&&!$('iam')){_rs=1;try{const t=iso(new Date());if(localStorage.getItem('remd')!==t&&remItems().length){localStorage.setItem('remd',t);remModal()}}catch(e){}}};
+
 /* ==================== FIN INTELIGENCIA ARTIFICIAL ==================== */
 
 (async()=>{
