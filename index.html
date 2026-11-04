@@ -45,6 +45,7 @@ input,select,textarea{width:100%;padding:10px;border:1px solid var(--line);borde
 .note{font-size:.72rem;color:var(--muted);margin-top:8px}
 #sync{font-size:.7rem}
 .wa{position:fixed;right:14px;bottom:calc(16px + env(safe-area-inset-bottom,0px));width:58px;height:58px;border-radius:50%;background:#25D366;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px #0005;z-index:20}
+@media print{.top,nav,.noprint,.wa,button,body::before{display:none!important}body{background:#fff;color:#000}main{max-width:none;padding:0}.card{break-inside:avoid;border-color:#999;background:#fff}}
 </style>
 </head>
 <body>
@@ -56,6 +57,34 @@ const TABS=[['cuotas','Cuotas'],['prod','Productos'],['ventas','Ventas'],['cli',
 /* ====== PEGÁ ACÁ TU CONFIG DE FIREBASE (Configuración del proyecto > Tus apps > Web). Ejemplo: {apiKey:"...",authDomain:"...",projectId:"...",appId:"..."} ====== */
 const FIREBASE_CONFIG={apiKey:"AIzaSyA7oAT5mcof11abtCUIFDTSJI2b9R141zQ",authDomain:"distribuidora-md-f9f95.firebaseapp.com",projectId:"distribuidora-md-f9f95",storageBucket:"distribuidora-md-f9f95.firebasestorage.app",messagingSenderId:"269066695927",appId:"1:269066695927:web:2ec3d47754f910ca934ff2"};
 const ADMINS=['joha461@gmail.com','damianirala0727@gmail.com']; // emails que pueden entrar al panel, ej: ['vos@mail.com','hermana@mail.com']
+let fotoIA='';
+const G={per:'todo',desde:'',hasta:'',pid:''};
+const ymd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+function gFilter(){const n=new Date(),y=n.getFullYear(),m=n.getMonth();let a='',b='',lb='Todo el período';
+  if(G.per==='mes'){a=ymd(new Date(y,m,1));b=ymd(new Date(y,m+1,0));lb='Este mes'}
+  else if(G.per==='mesant'){a=ymd(new Date(y,m-1,1));b=ymd(new Date(y,m,0));lb='Mes pasado'}
+  else if(G.per==='30d'){a=ymd(new Date(y,m,n.getDate()-29));b=ymd(n);lb='Últimos 30 días'}
+  else if(G.per==='anio'){a=y+'-01-01';b=y+'-12-31';lb='Este año'}
+  else if(G.per==='rango'){a=G.desde;b=G.hasta;lb='Del '+(a||'inicio')+' al '+(b||'hoy')}
+  const inR=d=>(!a||d>=a)&&(!b||d<=b),p=S.products.find(x=>x.id===G.pid);
+  return{label:lb+(p?' · '+p.name:''),
+    sales:S.sales.filter(v=>inR(v.date||'')&&(!G.pid||v.pid===G.pid)),
+    expenses:G.pid?[]:S.expenses.filter(e=>inR(e.date||'')),
+    leads:S.leads.filter(l=>inR(ymd(new Date(l.createdAt||0)))&&(!p||l.product===p.name))}}
+function gTot(F){const sm=f=>F.sales.reduce((a,v)=>a+f(v),0),cob=sm(cobrado),cst=sm(v=>v.cost),tot=sm(v=>v.total),gas=F.expenses.reduce((a,e)=>a+e.amount,0),aseg=sm(v=>Math.max(0,cobrado(v)-v.cost));
+  return{cob,cst,tot,calle:tot-cob,aseg,gas,esperada:tot-cst-gas,neta:aseg-gas,atr:F.sales.filter(late).length}}
+function gProd(F){const m={};F.sales.forEach(v=>{const k=v.pname||'(sin nombre)',o=m[k]||(m[k]={n:k,u:0,ing:0,cob:0,aseg:0,gane:0});o.u++;o.ing+=v.total;o.cob+=cobrado(v);o.aseg+=Math.max(0,cobrado(v)-v.cost);o.gane+=v.total-v.cost});return Object.values(m).sort((a,b)=>b.u-a.u||b.ing-a.ing)}
+function gPed(F){const m={};F.leads.forEach(l=>{const k=l.product||'(sin producto)';m[k]=(m[k]||0)+1});return Object.entries(m).sort((a,b)=>b[1]-a[1])}
+function gCuo(F){const m={};F.sales.forEach(v=>m[v.n]=(m[v.n]||0)+1);return Object.entries(m).sort((a,b)=>b[1]-a[1])}
+async function gXls(){const F=gFilter(),T=gTot(F);
+  try{if(!window.XLSX)await new Promise((ok,no)=>{const t=document.createElement('script');t.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';t.onload=ok;t.onerror=no;document.head.appendChild(t)})}catch(e){alert('No se pudo cargar el generador de Excel. Revisá tu conexión e intentá de nuevo.');return}
+  const wb=XLSX.utils.book_new(),add=(n,r)=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(r),n);
+  add('Resumen',[['Período',F.label],[],['Ya cobrado',T.cob],['Plata en la calle',T.calle],['Costo de lo vendido',T.cst],['Gastos',T.gas],['Ganancia asegurada (neta)',T.neta],['Ganancia esperada al cobrar todo',T.esperada],['Ventas',F.sales.length],['Clientes con atraso',T.atr]]);
+  add('Ventas',[['Fecha','Cliente','Teléfono','Producto','Cuotas','Total','Anticipo','Cuotas pagas','Cobrado','Saldo','Costo','Ganancia asegurada']].concat(F.sales.map(v=>[v.date||'',v.client,v.phone||'',v.pname,v.n,v.total,v.anticipo||0,v.paid,Math.round(cobrado(v)),Math.round(v.total-cobrado(v)),v.cost,Math.round(Math.max(0,cobrado(v)-v.cost))])));
+  add('Por producto',[['Producto','Ventas','Vendido','Cobrado','Ganancia asegurada','Ganancia esperada']].concat(gProd(F).map(x=>[x.n,x.u,x.ing,Math.round(x.cob),Math.round(x.aseg),Math.round(x.gane)])));
+  add('Pedidos de clientes',[['Producto','Pedidos']].concat(gPed(F)));
+  add('Gastos',[['Fecha','Detalle','Monto']].concat(F.expenses.map(e=>[e.date||'',e.desc,e.amount])));
+  XLSX.writeFile(wb,'ganancias_'+ymd(new Date())+'.xlsx')}
 const IA_URL='https://ia-ventas.joha461.workers.dev'; // ← acá va la dirección de tu servidor de IA (Cloudflare), ej: 'https://ia-ventas.algo.workers.dev'
 let tab='cuotas', fb=null;
 const S={config:{recargo:.03,colchon:.07,anticipo:.4},products:[],sales:[],expenses:[],leads:[],receipts:[]};
@@ -146,6 +175,8 @@ function build(){nav();const a=$('app');
     <div class="row"><div><label>Costo</label><input id="pc" type="number" inputmode="numeric"></div><div><label>Margen %</label><input id="pm" type="number" value="40"></div></div>
     <label>Stock (unidades)</label><input id="ps" type="number" value="1">
     <label>Foto del producto (opcional)</label><input id="pf" type="file" accept="image/*"><p class="note" id="pmsg">Subí la foto y la IA te sugiere nombre y descripción.</p>
+    <div id="pia" style="display:none"><label>Estilo de la foto con IA</label><select id="pest"><option value="estudio">Fondo de estudio</option><option value="ambiente">En un ambiente (living, local…)</option><option value="modelo">Con una modelo</option></select>
+    <button class="btn" id="pmej" type="button" style="margin-top:8px">✨ Mejorar con IA</button><div id="pprev" style="margin-top:10px"></div></div>
     <label>Descripción (la IA la sugiere; podés editarla)</label><textarea id="pd" rows="3" placeholder="Opcional"></textarea>
     <button class="btn g" id="padd">Guardar producto</button></div>
     <div class="card"><h2>MIS PRODUCTOS</h2><div id="plist"></div></div>
@@ -172,10 +203,16 @@ function build(){nav();const a=$('app');
     <div id="vinfo" class="note"></div>
     <button class="btn g" id="vadd">Registrar venta</button></div>`;
   if(tab==='cli')a.innerHTML=`<div class="card"><h2>CLIENTES</h2><div id="cbanner"></div><label>Mostrar</label><select id="cf"><option value="todos">Todos</option><option value="late">Atrasados</option><option value="debe">Con deuda</option><option value="pago">Pagaron todo</option></select></div><div id="slist"></div>`;
-  if(tab==='gan')a.innerHTML=`<div id="gres"></div>
-    <div class="card"><h2>GASTOS (nafta, comisiones…)</h2>
+  if(tab==='gan')a.innerHTML=`<div class="card noprint"><h2>FILTROS</h2>
+    <label>Período (según la fecha de la venta)</label><select id="gper"><option value="todo">Todo</option><option value="mes">Este mes</option><option value="mesant">Mes pasado</option><option value="30d">Últimos 30 días</option><option value="anio">Este año</option><option value="rango">Elegir fechas…</option></select>
+    <div class="row" id="grng" style="display:none"><div><label>Desde</label><input id="gdesde" type="date"></div><div><label>Hasta</label><input id="ghasta" type="date"></div></div>
+    <label>Producto</label><select id="gprod"><option value="">Todos los productos</option></select>
+    <div class="row"><button class="btn" id="gprint">🖨 Imprimir</button><button class="btn g" id="gxls">📊 Descargar Excel</button></div></div>
+    <div id="gres"></div><div id="gmet"></div>
+    <div class="card noprint"><h2>GASTOS (nafta, comisiones…)</h2>
     <div class="row"><div><label>Detalle</label><input id="gd"></div><div><label>Monto</label><input id="gm" type="number" inputmode="numeric"></div></div>
-    <button class="btn" id="gadd">Agregar gasto</button><div id="glist" style="margin-top:10px"></div></div>`;
+    <button class="btn" id="gadd">Agregar gasto</button></div>
+    <div class="card"><h2>GASTOS DEL PERÍODO</h2><div id="glist"></div></div>`;
   if(tab==='ped')a.innerHTML=`<div class="card"><h2>PEDIDOS DE CLIENTES</h2><div id="llist"></div><p class="note">Solo llegan pedidos con el email verificado. El DNI lo verificás vos en persona: marcalo cuando lo hayas chequeado.</p></div>`;
   if(tab==='cat')a.innerHTML=`<div class="card"><h2>LINK PARA TUS CLIENTES</h2>
     <label>Tu WhatsApp (con código de país, sin + ni espacios)</label><input id="kw" placeholder="5491122334455" value="${esc(S.config.wa||'')}">
@@ -256,16 +293,32 @@ function bind(){
   const on=(id,f)=>{const e=$(id);if(e)e.onclick=f};
   ['cp','ca'].forEach(i=>{const e=$(i);if(e)e.oninput=refresh});
   ['vp','vn','va','cf','vc','vt','vpl'].forEach(i=>{const e=$(i);if(e)e.oninput=refresh});
+  const gp=$('gper');if(gp){gp.value=G.per;$('gdesde').value=G.desde;$('ghasta').value=G.hasta;$('grng').style.display=G.per==='rango'?'':'none';
+    gp.onchange=()=>{G.per=gp.value;$('grng').style.display=G.per==='rango'?'':'none';refresh()};
+    ['gdesde','ghasta'].forEach(i=>$(i).onchange=()=>{G.desde=$('gdesde').value;G.hasta=$('ghasta').value;refresh()});
+    $('gprod').onchange=()=>{G.pid=$('gprod').value;refresh()}}
+  on('gprint',()=>window.print());on('gxls',gXls);
   const vf=$('vfr');if(vf){const fl=()=>{$('vdp').innerHTML=dpOpts(vf.value);$('vdl').textContent=vf.value==='w'?'Día de la semana':'Período de pago';$('vddw').style.display=vf.value==='w'?'none':''};vf.onchange=fl;fl()}
-  const pf=$('pf');if(pf)pf.onchange=async()=>{const f=pf.files[0];if(!f)return;if(!(fb&&fb.fn)){$('pmsg').textContent='La IA todavía no está configurada.';return}
+  const pf=$('pf');if(pf)pf.onchange=async()=>{fotoIA='';if($('pprev'))$('pprev').innerHTML='';const f=pf.files[0];if($('pia'))$('pia').style.display=f?'':'none';if(!f)return;if(!(fb&&fb.fn)){$('pmsg').textContent='La IA todavía no está configurada.';return}
     $('pmsg').textContent='✨ La IA está mirando la foto… (puede tardar unos segundos)';
     try{const r=await ia('producto',{img:await shrink(f,640,.7)}),j=r.json||{};
       if(!$('pn').value.trim())$('pn').value=j.nombre||'';if(!$('pd').value.trim())$('pd').value=j.descripcion||'';
       $('pmsg').textContent=j.nombre?'✨ Sugerido por la IA: revisalo y corregilo si hace falta.':'No pude reconocer el producto. Escribí el nombre.'+(j.raw?' (La IA dijo: '+j.raw.slice(0,90)+')':'')}
     catch(e){$('pmsg').textContent=e.message==='img'?'No pude leer esa foto. Probá con otra, o sacala de nuevo en formato JPG.':'La IA no respondió. Probá de nuevo en un momento o escribí el nombre a mano.'}};
+  on('pmej',async()=>{const f=$('pf').files[0],b=$('pmej'),pv=$('pprev');if(!f)return;
+    if(!(fb&&fb.fn)){$('pmsg').textContent='La IA todavía no está configurada.';return}
+    b.disabled=true;pv.innerHTML='';$('pmsg').textContent='✨ Armando la foto profesional… puede tardar hasta 1 minuto.';
+    try{const r=await ia('foto',{img:await shrink(f,1024,.85),nombre:$('pn').value.trim(),estilo:$('pest').value},120000);
+      if(!r.img)throw new Error(r.error||'ia');
+      pv.innerHTML=`<img src="${r.img}" style="width:100%;border-radius:12px;display:block"><div class="row" style="margin-top:8px"><button class="btn g" id="pok" type="button">Usar esta foto</button><button class="btn" id="pno" type="button">Descartar</button></div>`;
+      $('pok').onclick=()=>{fotoIA=r.img;pv.innerHTML=`<img src="${r.img}" style="width:100%;border-radius:12px;display:block">`;$('pmsg').textContent='✔ Foto con IA elegida: se guarda con el producto.'};
+      $('pno').onclick=()=>{fotoIA='';pv.innerHTML='';$('pmsg').textContent='Descartada. Se usa tu foto original.'};
+      $('pmsg').textContent='Mirá bien el resultado (logo y color) antes de usarla.'}
+    catch(e){$('pmsg').textContent=e.message==='img'?'No pude leer esa foto.':'No se pudo mejorar la foto'+(e.message&&e.message!=='ia'&&e.name!=='AbortError'?': '+e.message.slice(0,120):'. Probá de nuevo.')}
+    finally{b.disabled=false}});
   on('padd',async()=>{const n=$('pn').value.trim();if(!n||!num('pc')){$('pmsg').textContent='Falta el nombre o el costo.';return}
-    const f=$('pf').files[0];let ph='';if(f){try{ph=await shrink(f)}catch(e){$('pmsg').textContent='No pude leer la foto: el producto se guardó sin foto.'}}
-    put('products',{id:uid(),name:n,cost:num('pc'),margin:num('pm'),stock:num('ps'),photo:ph,desc:$('pd').value.trim()});$('pn').value='';$('pc').value='';$('pf').value='';$('pd').value='';
+    const f=$('pf').files[0];let ph='';if(fotoIA){try{ph=await shrink(await (await fetch(fotoIA)).blob())}catch(e){}}if(!ph&&f){try{ph=await shrink(f)}catch(e){$('pmsg').textContent='No pude leer la foto: el producto se guardó sin foto.'}}
+    put('products',{id:uid(),name:n,cost:num('pc'),margin:num('pm'),stock:num('ps'),photo:ph,desc:$('pd').value.trim()});$('pn').value='';$('pc').value='';$('pf').value='';$('pd').value='';fotoIA='';$('pprev').innerHTML='';$('pia').style.display='none';
     if(ph||!f)$('pmsg').textContent='✔ Producto guardado. Subí otra foto y la IA te sugiere nombre y descripción.'});
   on('ssave',()=>{const rr=S.config.recargo,cc=S.config.colchon,coef={},coefV={};document.querySelectorAll('.cf').forEach(i=>{const v=parseFloat(i.value),n=i.dataset.n;if(v>0&&Math.abs(v-(COEF_BASE[n]||(1+cc+rr*n/2)))>0.0004)coef[n]=v});document.querySelectorAll('.cv').forEach(i=>{const v=parseFloat(i.value),n=i.dataset.n;if(v>0&&Math.abs(v-(COEF_V[n]||1))>0.0004)coefV[n]=v});put('config',{...S.config,promoMin:num('spm')||5,pun:Math.max(0,parseFloat($('spun').value)||0),avisoDias:Math.max(0,parseInt($('sav').value)||0),alias:$('sal').value.trim(),titular:$('stt').value.trim(),coef,coefV});build()});
   on('srs',()=>{put('config',{...S.config,coef:{},coefV:{}});build()});
@@ -298,14 +351,18 @@ function refresh(){
       return `<div class="item" style="align-items:flex-start"><div><b>${esc(x.pname)}</b> <span class="tag ${done?'ok':l?'late':''}">${done?'Pagado':l?'Atrasado '+days+' d':'Al día'}</span><small>${FQ[x.freq||'m']}${x.freq&&x.dp!=null?' '+dpText(x.freq,x.dp).toLowerCase():''} · Cuota ${x.paid}/${x.n} de ${money(cuotaOf(x))} · ${done?'':'vence '+nextDue(x).toLocaleDateString('es-AR')+' · '}saldo ${money(x.total-cobrado(x))}${mo>0?' · <b class="neg">punitorios '+money(mo)+'</b>':''}</small>`+
       rs.map(r=>`<details><summary class="neg"><b>Comprobante cuota ${r.n}</b> (revisar)</summary><img src="${r.img}" alt="" style="width:100%;border-radius:10px;margin:6px 0"><button class="btn s g" data-ok="${r.id}">Aprobar</button> <button class="btn s x" data-no="${r.id}">Rechazar</button></details>`).join('')+
       `</div><div style="display:flex;flex-direction:column;gap:4px">${done?'':`<button class="btn s g" data-pay="${x.id}">+ Cuota</button>`}${x.tok?`<button class="btn s" data-lk="${x.tok}">Link de pago</button>`:''}${x.tok&&x.phone?`<a class="btn s" style="text-decoration:none;text-align:center" href="https://wa.me/${e164g(x.phone).slice(1)}?text=${encodeURIComponent('Hola '+x.client.split(' ')[0]+', acá podés ver tu cuenta y pagar tu cuota: '+payLink(x.tok))}">WhatsApp</a>`:''}<button class="btn s x" data-ds="${x.id}">Borrar</button></div></div>`}).join('')+`</div>`).join('')||'<p class="note">No hay clientes para mostrar.</p>'}
-  if($('gres')){const cob=S.sales.reduce((a,s)=>a+cobrado(s),0),cst=S.sales.reduce((a,s)=>a+s.cost,0),tot=S.sales.reduce((a,s)=>a+s.total,0),
-      calle=S.sales.reduce((a,s)=>a+s.total-cobrado(s),0),asegurada=S.sales.reduce((a,s)=>a+Math.max(0,cobrado(s)-s.cost),0),
-      gas=S.expenses.reduce((a,e)=>a+e.amount,0),esperada=tot-cst-gas,neta=asegurada-gas,atr=S.sales.filter(late).length;
-    const k=(l,v,c='')=>`<div class="kpi"><span>${l}</span><b class="${c}">${money(v)}</b></div>`;
-    $('gres').innerHTML=`<div class="card"><h2>GANANCIAS</h2><div class="kpis">${k('Ya cobrado',cob)}${k('Plata en la calle',calle)}${k('Costo de lo vendido',cst)}${k('Gastos',gas)}${k('Ganancia asegurada (neta)',neta,neta>=0?'pos':'neg')}${k('Ganancia esperada al cobrar todo',esperada,esperada>=0?'pos':'neg')}</div>
+  if($('gres')){const F=gFilter(),T=gTot(F),gp=$('gprod');
+    if(gp&&gp.dataset.n!==String(S.products.length)){gp.innerHTML='<option value="">Todos los productos</option>'+S.products.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');gp.dataset.n=S.products.length;gp.value=G.pid}
+    const k=(l,v,c='')=>`<div class="kpi"><span>${l}</span><b class="${c}">${money(v)}</b></div>`,{cob,cst,calle,gas,esperada,neta,atr}=T;
+    $('gres').innerHTML=`<div class="card"><h2>GANANCIAS</h2><p class="note" style="margin:0 0 8px">${esc(F.label)} · ${F.sales.length} venta(s)</p><div class="kpis">${k('Ya cobrado',cob)}${k('Plata en la calle',calle)}${k('Costo de lo vendido',cst)}${k('Gastos',gas)}${k('Ganancia asegurada (neta)',neta,neta>=0?'pos':'neg')}${k('Ganancia esperada al cobrar todo',esperada,esperada>=0?'pos':'neg')}</div>
     <div class="kpis" style="margin-top:8px">${k('Tu parte (50%)',neta/2,neta>=0?'pos':'neg')}${k('Parte de tu hermano (50%)',neta/2,neta>=0?'pos':'neg')}</div>
-    <p class="note">${atr?`⚠ ${atr} cliente(s) con cuotas atrasadas.`:'Sin atrasos.'} Ganancia asegurada = lo cobrado por encima del costo de cada producto, menos gastos. El reparto 50/50 es un ejemplo: acordalo entre ustedes.</p></div>`}
-  if($('glist'))$('glist').innerHTML=S.expenses.map(e=>`<div class="item"><div>${esc(e.desc)}<small>${e.date}</small></div><div>${money(e.amount)} <button class="btn s x" data-de="${e.id}">✕</button></div></div>`).join('');
+    <p class="note">${atr?`⚠ ${atr} cliente(s) con cuotas atrasadas.`:'Sin atrasos.'} Ganancia asegurada = lo cobrado por encima del costo de cada producto, menos gastos. El reparto 50/50 es un ejemplo: acordalo entre ustedes.${G.pid?' Con un producto elegido no se descuentan gastos (no están asignados a productos).':''}</p></div>`;
+    const PR=gProd(F),PE=gPed(F),CU=gCuo(F),top=PR[0],rent=[...PR].sort((a,b)=>b.gane-a.gane)[0];
+    $('gmet').innerHTML=`<div class="card"><h2>MÉTRICAS</h2>`+(top?`<div class="kpis"><div class="kpi"><span>Más vendido</span><b style="font-size:1rem">${esc(top.n)}</b><small>${top.u} venta(s)</small></div><div class="kpi"><span>Más rentable</span><b style="font-size:1rem">${esc(rent.n)}</b><small>${money(rent.gane)} esperados</small></div></div>`:'<p class="note">No hay ventas en este período.</p>')+`</div>
+    <div class="card"><h2>PRODUCTOS MÁS VENDIDOS</h2>`+(PR.map((x,n)=>`<div class="item"><div><b>${n+1}. ${esc(x.n)}</b><small>${x.u} venta(s) · vendido ${money(x.ing)}</small></div><div style="text-align:right"><b class="${x.gane>=0?'pos':'neg'}">${money(x.gane)}</b><small>ganancia esperada</small></div></div>`).join('')||'<p class="note">Sin datos.</p>')+`</div>
+    <div class="card"><h2>LO QUE MÁS TE PIDEN</h2>`+(PE.map(([n,c],i)=>`<div class="item"><div><b>${i+1}. ${esc(n)}</b></div><div>${c} pedido(s)</div></div>`).join('')||'<p class="note">No hay pedidos de clientes en este período.</p>')+`<p class="note">Son los pedidos que llegan por el formulario "Quiero comprar" del catálogo.</p></div>
+    <div class="card"><h2>CUOTAS MÁS ELEGIDAS</h2>`+(CU.map(([n,c])=>`<div class="item"><div><b>${n} cuotas</b></div><div>${c} venta(s)</div></div>`).join('')||'<p class="note">Sin datos.</p>')+`</div>`}
+  if($('glist'))$('glist').innerHTML=gFilter().expenses.map(e=>`<div class="item"><div>${esc(e.desc)}<small>${e.date}</small></div><div>${money(e.amount)} <button class="btn s x" data-de="${e.id}">✕</button></div></div>`).join('');
   if($('llist'))$('llist').innerHTML=[...S.leads].sort((a,b)=>b.createdAt-a.createdAt).map(l=>`<div class="item" style="align-items:flex-start"><div><b>${esc(l.name)}</b> <span class="tag ${l.dniOk?'ok':''}">${l.dniOk?'DNI chequeado':'DNI sin chequear'}</span><small>DNI ${esc(l.dni)} · ${esc(l.addr)}</small><small>${esc(l.product)} en ${esc(l.cuotas)} cuotas · quiere pagar ${(FQ[l.freq]||'Mensual').toLowerCase()} ${esc(dpText(l.freq||'m',l.dp)).toLowerCase()} · ${new Date(l.createdAt).toLocaleDateString('es-AR')}</small><small>📱 ${esc(l.phone)} · ✉ ${esc(l.email)} ✔</small><a href="https://wa.me/${esc(String(l.phone).replace(/\D/g,''))}" style="color:var(--green);font-weight:700">Escribir por WhatsApp</a></div><div style="display:flex;flex-direction:column;gap:4px"><button class="btn s" data-dni="${l.id}">${l.dniOk?'Quitar check':'DNI ok'}</button><button class="btn s x" data-dl="${l.id}">Borrar</button></div></div>`).join('')||'<p class="note">Todavía no hay pedidos.</p>';
   document.querySelectorAll('[data-dni]').forEach(b=>b.onclick=()=>{const l=S.leads.find(x=>x.id===b.dataset.dni);put('leads',{...l,dniOk:!l.dniOk})});
   document.querySelectorAll('[data-dl]').forEach(b=>b.onclick=()=>del('leads',b.dataset.dl));
@@ -320,7 +377,7 @@ function refresh(){
 }
 
 /* ====================== INTELIGENCIA ARTIFICIAL ====================== */
-async function ia(mode,data){const h={'content-type':'application/json'},u=fb.auth.currentUser,ac=new AbortController(),tm=setTimeout(()=>ac.abort(),45000);if(u)h.authorization='Bearer '+await u.getIdToken();try{const r=await fetch(IA_URL,{method:'POST',headers:h,body:JSON.stringify({mode,...data}),signal:ac.signal});if(!r.ok)throw new Error('ia');return await r.json()}finally{clearTimeout(tm)}}
+async function ia(mode,data,ms=45000){const h={'content-type':'application/json'},u=fb.auth.currentUser,ac=new AbortController(),tm=setTimeout(()=>ac.abort(),ms);if(u)h.authorization='Bearer '+await u.getIdToken();try{const r=await fetch(IA_URL,{method:'POST',headers:h,body:JSON.stringify({mode,...data}),signal:ac.signal});if(!r.ok)throw new Error('ia');return await r.json()}finally{clearTimeout(tm)}}
 function iaModal(t,h){let m=$('iam');if(m)m.remove();m=document.createElement('div');m.id='iam';
   m.style.cssText='position:fixed;inset:0;z-index:50;background:#0009;display:flex;align-items:flex-end;justify-content:center';
   m.innerHTML=`<div class="card" style="width:100%;max-width:760px;max-height:85vh;overflow:auto;margin:0;border-radius:16px 16px 0 0"><h2>${t}</h2><div id="iab">${h}</div><button class="btn x" id="iax">Cerrar</button></div>`;
