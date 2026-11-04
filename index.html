@@ -171,7 +171,7 @@ function build(){nav();const a=$('app');
     <label>Producto</label><select id="cp"></select>
     <div id="cres" style="margin-top:12px"></div>
     <p class="note">Esta pantalla se la podés mostrar al cliente: no muestra costos ni ganancias.</p></div>`;
-  if(tab==='prod')a.innerHTML=`<div class="card"><h2>CARGAR DESDE UN MENSAJE</h2><p class="note" style="margin:0 0 6px">Copiá el mensaje que te manda la distribuidora (nombre, detalles y precio), pegalo acá y la app arma el producto y te calcula la ganancia.</p><textarea id="mtx" rows="5" placeholder="Pegá acá el mensaje de WhatsApp"></textarea><button class="btn g" id="mleer" type="button">✨ Leer mensaje</button><div id="mres" style="margin-top:8px"></div></div>
+  if(tab==='prod')a.innerHTML=`<div class="card"><h2>CARGAR DESDE UN MENSAJE</h2><p class="note" style="margin:0 0 6px">Subí la captura de lo que te manda la distribuidora (foto + nombre + precio) y la app lee el texto, arma el producto, te calcula la ganancia y prepara la foto. O pegá el texto abajo.</p><label>📷 Captura o foto de la distribuidora</label><input id="mimg" type="file" accept="image/*"><textarea id="mtx" rows="5" placeholder="Pegá acá el mensaje de WhatsApp" style="margin-top:8px"></textarea><button class="btn g" id="mleer" type="button">✨ Leer mensaje</button><div id="mres" style="margin-top:8px"></div></div>
     <div class="card"><h2>NUEVO PRODUCTO</h2>
     <label>Nombre</label><input id="pn" placeholder="Ventilador de pie 20&quot;">
     <label>Distribuidora (dónde lo compraste)</label><input id="pdi" list="dl-dist" placeholder="Opcional" autocomplete="off">
@@ -229,12 +229,13 @@ function build(){nav();const a=$('app');
 function catView(){
   document.title='Catálogo';$('nav').style.display='none';document.querySelector('.top h1').textContent='CATÁLOGO';$('sync').textContent='';
   $('app').innerHTML=`<div class="card"><input id="bq" type="search" placeholder="🔍 ¿Qué estás buscando?" style="margin-bottom:10px"><input id="cap" type="hidden" value="0"><p style="margin:0"><b>Pagás la 1ª cuota hoy</b> y las demás semanal, quincenal o mensual, siempre del mismo valor.</p><p class="note">Los precios en cuotas incluyen el recargo por financiación.</p></div><div id="cl"><p class="note">Cargando…</p></div>
-  <div class="card" id="lead"><h2>QUIERO COMPRAR</h2>
+  <div class="card" id="lead" style="display:none"><h2>QUIERO COMPRAR</h2>
     <label>Producto</label><select id="lp2"></select>
     <label>Cuotas</label><select id="ln">${NS.map(c=>`<option ${c===6?'selected':''}>${c}</option>`).join('')}</select>
     <label>Nombre y apellido</label><input id="lnm" autocomplete="name">
     <label>DNI (sin puntos)</label><input id="ldni" inputmode="numeric" maxlength="8">
-    <label>Dirección (calle, número, localidad)</label><input id="lad" autocomplete="street-address">
+    <label>Dirección (calle y número, piso/depto si hay)</label><input id="lad" autocomplete="address-line1">
+    <div class="row"><div><label>Ciudad / localidad</label><input id="lci" autocomplete="address-level2"></div><div><label>Partido</label><input id="lpa" autocomplete="address-level1"></div></div>
     <label>Celular con código de área (sin 0 ni 15)</label><input id="ltel" type="tel" placeholder="11 2233 4455">
     <label>Email</label><input id="lem" type="email" autocomplete="email">
     <div class="row"><div><label>¿Cada cuánto pagás?</label><select id="lfr"><option value="m">Mensual</option><option value="q">Quincenal</option><option value="w">Semanal</option></select></div><div><label id="ldl">Período de pago</label><select id="ldp"></select></div></div>
@@ -246,28 +247,31 @@ function catView(){
   const d=()=>{const q=nz($('bq').value.trim()),pm=cfg.pm||5,
       banner=`<div class="card" style="border:2px solid var(--green)"><h2>⭐ CLIENTES FRECUENTES</h2><p style="margin:0">Si ya nos compraste <b>${pm} veces o más</b>, pagás tu <b>primera cuota recién el mes que viene</b>.</p>${cfg.w?`<a class="btn g" style="display:block;text-align:center;text-decoration:none" href="https://wa.me/${esc(cfg.w)}?text=${encodeURIComponent('Hola, soy cliente frecuente y quiero consultar por la promo')}">Consultar la promo</a>`:''}</div>`;
     const list=items.sort((a,b)=>a.n.localeCompare(b.n)).filter(it=>!q||nz(it.n+' '+(it.ds||'')).includes(q)).map((it,i)=>{const o=open[it.n];
-      const rows=o?CATN.map(n=>{const f=(it.f||{})[n]||0,c=f/n,msg='Hola, me interesa: '+it.n+' en '+n+' cuotas de '+money(c)+' (pago la 1ª hoy)';
-        return `<div class="item"><div><b>${n} cuotas de ${money(c)}</b><small>Hoy pagás la 1ª · Total ${money(f)}</small></div>${cfg.w?`<a class="btn s g" style="text-decoration:none" href="https://wa.me/${esc(cfg.w)}?text=${encodeURIComponent(msg)}">Elegir</a>`:''}</div>`}).join(''):'';
-      return `<div class="card"><div data-o="${esc(it.n)}" style="cursor:pointer">${it.ph?`<img src="${it.ph}" alt="" style="width:100%;max-height:230px;object-fit:cover;border-radius:12px;margin-bottom:10px">`:''}<h2>${esc(it.n)} <span class="tag">${it.d?'En stock':'A pedido'}</span></h2>${it.ds?`<p style="margin:0 0 8px;color:var(--muted)">${esc(it.ds)}</p>`:''}<div class="kpi" style="margin:8px 0 6px"><span>Precio de contado</span><b>${money(it.k)}</b></div><button class="btn ${o?'':'g'}" style="width:100%;margin:0 0 6px">${o?'▲ Ocultar cuotas':'Ver cuotas ▼'}</button></div>${rows}${o&&cfg.w?'<p class="note">Tocá "Elegir" y se abre WhatsApp con tu plan para hablar con nosotros.</p>':''}</div>`}).join('');
+      const rows=o?CATN.map(n=>{const f=(it.f||{})[n]||0,c=f/n;
+        return `<div class="item"><div><b>${n} cuotas de ${money(c)}</b><small>Hoy pagás la 1ª</small></div><button class="btn s g" data-el="${esc(it.n)}|${n}" type="button">Elegir</button></div>`}).join(''):'';
+      return `<div class="card"><div data-o="${esc(it.n)}" style="cursor:pointer">${it.ph?`<img src="${it.ph}" alt="" style="width:100%;max-height:230px;object-fit:cover;border-radius:12px;margin-bottom:10px">`:''}<h2>${esc(it.n)} <span class="tag">${it.d?'En stock':'A pedido'}</span></h2>${it.ds?`<p style="margin:0 0 8px;color:var(--muted)">${esc(it.ds)}</p>`:''}<div class="kpi" style="margin:8px 0 6px"><span>Precio de contado</span><b>${money(it.k)}</b></div><button class="btn ${o?'':'g'}" style="width:100%;margin:0 0 6px">${o?'▲ Ocultar cuotas':'Ver cuotas ▼'}</button></div>${rows}${o?'<p class="note">Tocá "Elegir" en la cantidad de cuotas que te sirva y completá tus datos.</p>':''}</div>`}).join('');
     $('cl').innerHTML=banner+(list||'<p class="note">'+(q?'No encontramos ese producto. Escribinos por WhatsApp y te ayudamos.':'Todavía no hay productos.')+'</p>');
-    $('cl').querySelectorAll('[data-o]').forEach(e=>e.onclick=()=>{open[e.dataset.o]=!open[e.dataset.o];d()})};
+    $('cl').querySelectorAll('[data-o]').forEach(e=>e.onclick=()=>{open[e.dataset.o]=!open[e.dataset.o];d()});
+    $('cl').querySelectorAll('[data-el]').forEach(b=>b.onclick=()=>{const s=b.dataset.el,i=s.lastIndexOf('|'),nm=s.slice(0,i),n=s.slice(i+1);
+      const lp=$('lp2');if([...lp.options].every(x=>x.value!==nm)){const o=document.createElement('option');o.textContent=nm;lp.appendChild(o)}lp.value=nm;$('ln').value=n;
+      const ld=$('lead');ld.style.display='';ld.scrollIntoView({behavior:'smooth',block:'start'})})};
   $('cap').oninput=d;$('bq').oninput=d;const lf=$('lfr');lf.onchange=()=>{$('ldp').innerHTML=dpOpts(lf.value);$('ldl').textContent=lf.value==='w'?'Día de la semana':'Período de pago'};lf.onchange();leadInit();
   fb.fs.onSnapshot(fb.fs.collection(fb.db,'catalog'),sn=>{items=[];sn.docs.forEach(x=>x.id==='_cfg'?cfg=x.data():items.push(x.data()));
     first=false;d();fillProd(items);waFab(cfg.w)},()=>{$('cl').innerHTML='<p class="note">No se pudo cargar el catálogo.</p>'});
 }
-const LF=['lnm','ldni','lad','ltel','lem'];
+const LF=['lnm','ldni','lad','lci','lpa','ltel','lem'];
 function fillProd(items){const e=$('lp2');if(!e)return;const v=e.value;e.innerHTML=items.map(x=>`<option>${esc(x.n)}</option>`).join('');if(v)e.value=v}
 async function leadInit(){
   const A=fb.au,v=k=>$(k).value.trim(),say=t=>{$('lmsg').textContent=t},st=h=>{$('lstep').innerHTML=h};
   let dr={},cu=null,conf=null,rv=null;try{dr=JSON.parse(localStorage.getItem('lead')||'{}')}catch(e){}
   LF.forEach(id=>{$(id).value=dr[id]||'';$(id).oninput=()=>{const o={};LF.forEach(k=>o[k]=$(k).value);try{localStorage.setItem('lead',JSON.stringify(o))}catch(e){}}});
-  const val=()=>v('lnm').length<3?'Completá tu nombre y apellido':!/^\d{7,8}$/.test(v('ldni'))?'El DNI debe tener 7 u 8 números, sin puntos':v('lad').length<6?'Completá tu dirección':v('ltel').replace(/\D/g,'').length<10?'Poné tu celular con código de área (sin 0 ni 15)':!/^\S+@\S+\.\S+$/.test(v('lem'))?'El email no parece válido':'';
+  const val=()=>v('lnm').length<3?'Completá tu nombre y apellido':!/^\d{7,8}$/.test(v('ldni'))?'El DNI debe tener 7 u 8 números, sin puntos':v('lad').length<6?'Completá tu dirección (calle y número)':v('lci').length<3?'Completá tu ciudad o localidad':v('lpa').length<3?'Completá tu partido':v('ltel').replace(/\D/g,'').length<10?'Poné tu celular con código de área (sin 0 ni 15)':!/^\S+@\S+\.\S+$/.test(v('lem'))?'El email no parece válido':'';
   const e164=t=>{const d=t.replace(/\D/g,'');return d.startsWith('54')?'+'+d:'+549'+d};
   function step(){say('');
     if(!cu||!cu.emailVerified){st('<button class="btn g" id="b1">1. Verificar mi email</button>');
       $('b1').onclick=async()=>{const e=val();if(e)return say(e);try{await A.sendSignInLinkToEmail(fb.auth,v('lem'),{url:location.href.split('#')[0].split('?')[0]+'#catalogo',handleCodeInApp:true});say('Te mandamos un link a tu email. Abrilo en este mismo celular para seguir.')}catch(x){say('No se pudo enviar el email')}}}
     else{st('<p class="note">✔ Email verificado</p><button class="btn g" id="b4">3. Enviar mi solicitud</button>');
-      $('b4').onclick=async()=>{const e=val();if(e)return say(e);try{await fb.fs.setDoc(fb.fs.doc(fb.db,'leads',cu.uid+'_'+Date.now()),{uid:cu.uid,name:v('lnm'),dni:v('ldni'),addr:v('lad'),phone:e164(v('ltel')),email:cu.email,product:$('lp2').value,cuotas:$('ln').value,createdAt:Date.now(),dniOk:false,freq:$('lfr').value,dp:Number($('ldp').value)});try{localStorage.removeItem('lead')}catch(x){}st('<p><b>¡Listo!</b> Recibimos tus datos. Te escribimos pronto.</p>')}catch(x){say('No se pudo enviar. Probá de nuevo.')}}}}
+      $('b4').onclick=async()=>{const e=val();if(e)return say(e);try{await fb.fs.setDoc(fb.fs.doc(fb.db,'leads',cu.uid+'_'+Date.now()),{uid:cu.uid,name:v('lnm'),dni:v('ldni'),addr:v('lad'),city:v('lci'),partido:v('lpa'),phone:e164(v('ltel')),email:cu.email,product:$('lp2').value,cuotas:$('ln').value,createdAt:Date.now(),dniOk:false,freq:$('lfr').value,dp:Number($('ldp').value)});try{localStorage.removeItem('lead')}catch(x){}st('<p><b>¡Listo!</b> Recibimos tus datos. Te escribimos pronto.</p>')}catch(x){say('No se pudo enviar. Probá de nuevo.')}}}}
   if(A.isSignInWithEmailLink(fb.auth,location.href)){try{await A.signInWithEmailLink(fb.auth,dr.lem||prompt('Confirmá tu email'),location.href);history.replaceState(null,'',location.pathname+'#catalogo')}catch(e){say('El link venció o no es válido. Pedí otro.')}}
   A.onAuthStateChanged(fb.auth,u=>{cu=u;step()});
 }
@@ -303,6 +307,12 @@ function bind(){
     $('gprod').onchange=()=>{G.pid=$('gprod').value;refresh()}}
   on('gprint',()=>window.print());on('gxls',gXls);
   if($('mleer')){_mi=[];if($('pm'))$('pm').addEventListener('input',drawM)}
+  const mi=$('mimg');if(mi)mi.onchange=async()=>{const f=mi.files[0];if(!f)return;_shot=null;
+    $('mres').innerHTML='<p class="note" id="mpr">📷 Leyendo la captura… (puede tardar unos segundos)</p>';
+    try{_shot=await recortar(f);const t=limpiarOCR(await ocr(await shrink(f,1600,.9),p=>{const e=$('mpr');if(e)e.textContent='📷 Leyendo la captura… '+p+'%'}));
+      if(!t.trim()){$('mres').innerHTML='<p class="neg note">No pude leer texto en la imagen. Probá con otra captura o pegá el texto.</p>';return}
+      $('mtx').value=t;$('mleer').click()}
+    catch(e){$('mres').innerHTML='<p class="neg note">No pude leer la imagen. Revisá tu conexión o pegá el texto a mano.</p>'}};
   on('mleer',async()=>{const t=$('mtx').value.trim();if(!t)return;const b=$('mleer');b.disabled=true;$('mres').innerHTML='<p class="note">✨ Leyendo el mensaje…</p>';
     let it=[];try{if(fb&&fb.fn){const r=await ia('mensaje',{text:t});it=r.items||[]}}catch(e){}
     if(!it.length)it=leerMsg(t);_mi=it;drawM();b.disabled=false});
@@ -326,7 +336,7 @@ function bind(){
     finally{b.disabled=false}});
   on('padd',async()=>{const n=$('pn').value.trim();if(!n||!num('pc')){$('pmsg').textContent='Falta el nombre o el costo.';return}
     const f=$('pf').files[0];let ph='';if(fotoIA){try{ph=await shrink(await (await fetch(fotoIA)).blob())}catch(e){}}if(!ph&&f){try{ph=await shrink(f)}catch(e){$('pmsg').textContent='No pude leer la foto: el producto se guardó sin foto.'}}
-    put('products',{id:uid(),name:n,dist:$('pdi').value.trim(),cost:num('pc'),margin:num('pm'),stock:num('ps'),photo:ph,desc:$('pd').value.trim()});$('pn').value='';$('pc').value='';$('pf').value='';$('pd').value='';fotoIA='';$('pprev').innerHTML='';$('pia').style.display='none';
+    put('products',{id:uid(),name:n,dist:$('pdi').value.trim(),cost:num('pc'),margin:num('pm'),stock:num('ps'),photo:ph,desc:$('pd').value.trim()});$('pn').value='';$('pc').value='';$('pf').value='';$('pd').value='';fotoIA='';_shot=null;$('mtx').value='';$('mimg').value='';$('mres').innerHTML='';$('pprev').innerHTML='';$('pia').style.display='none';
     if(ph||!f)$('pmsg').textContent='✔ Producto guardado. Subí otra foto y la IA te sugiere nombre y descripción.'});
   on('ssave',()=>{const rr=S.config.recargo,cc=S.config.colchon,coef={},coefV={};document.querySelectorAll('.cf').forEach(i=>{const v=parseFloat(i.value),n=i.dataset.n;if(v>0&&Math.abs(v-(COEF_BASE[n]||(1+cc+rr*n/2)))>0.0004)coef[n]=v});document.querySelectorAll('.cv').forEach(i=>{const v=parseFloat(i.value),n=i.dataset.n;if(v>0&&Math.abs(v-(COEF_V[n]||1))>0.0004)coefV[n]=v});put('config',{...S.config,promoMin:num('spm')||5,pun:Math.max(0,parseFloat($('spun').value)||0),avisoDias:Math.max(0,parseInt($('sav').value)||0),alias:$('sal').value.trim(),titular:$('stt').value.trim(),coef,coefV});build()});
   on('srs',()=>{put('config',{...S.config,coef:{},coefV:{}});build()});
@@ -375,7 +385,7 @@ function refresh(){
     <div class="card"><h2>LO QUE MÁS TE PIDEN</h2>`+(PE.map(([n,c],i)=>`<div class="item"><div><b>${i+1}. ${esc(n)}</b></div><div>${c} pedido(s)</div></div>`).join('')||'<p class="note">No hay pedidos de clientes en este período.</p>')+`<p class="note">Son los pedidos que llegan por el formulario "Quiero comprar" del catálogo.</p></div>
     <div class="card"><h2>CUOTAS MÁS ELEGIDAS</h2>`+(CU.map(([n,c])=>`<div class="item"><div><b>${n} cuotas</b></div><div>${c} venta(s)</div></div>`).join('')||'<p class="note">Sin datos.</p>')+`</div>`}
   if($('glist'))$('glist').innerHTML=gFilter().expenses.map(e=>`<div class="item"><div>${esc(e.desc)}<small>${e.date}</small></div><div>${money(e.amount)} <button class="btn s x" data-de="${e.id}">✕</button></div></div>`).join('');
-  if($('llist'))$('llist').innerHTML=[...S.leads].sort((a,b)=>b.createdAt-a.createdAt).map(l=>`<div class="item" style="align-items:flex-start"><div><b>${esc(l.name)}</b> <span class="tag ${l.dniOk?'ok':''}">${l.dniOk?'DNI chequeado':'DNI sin chequear'}</span><small>DNI ${esc(l.dni)} · ${esc(l.addr)}</small><small>${esc(l.product)} en ${esc(l.cuotas)} cuotas · quiere pagar ${(FQ[l.freq]||'Mensual').toLowerCase()} ${esc(dpText(l.freq||'m',l.dp)).toLowerCase()} · ${new Date(l.createdAt).toLocaleDateString('es-AR')}</small><small>📱 ${esc(l.phone)} · ✉ ${esc(l.email)} ✔</small><a href="https://wa.me/${esc(String(l.phone).replace(/\D/g,''))}" style="color:var(--green);font-weight:700">Escribir por WhatsApp</a></div><div style="display:flex;flex-direction:column;gap:4px"><button class="btn s" data-dni="${l.id}">${l.dniOk?'Quitar check':'DNI ok'}</button><button class="btn s x" data-dl="${l.id}">Borrar</button></div></div>`).join('')||'<p class="note">Todavía no hay pedidos.</p>';
+  if($('llist'))$('llist').innerHTML=[...S.leads].sort((a,b)=>b.createdAt-a.createdAt).map(l=>`<div class="item" style="align-items:flex-start"><div><b>${esc(l.name)}</b> <span class="tag ${l.dniOk?'ok':''}">${l.dniOk?'DNI chequeado':'DNI sin chequear'}</span><small>DNI ${esc(l.dni)} · ${esc(l.addr)}${l.city?', '+esc(l.city):''}${l.partido?' · Partido '+esc(l.partido):''}</small><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([l.addr,l.city,l.partido,'Argentina'].filter(Boolean).join(', '))}" target="_blank" rel="noopener" style="color:var(--green);font-weight:700;display:inline-block;margin:2px 0">📍 Ver dirección en Google Maps</a><small>${esc(l.product)} en ${esc(l.cuotas)} cuotas · quiere pagar ${(FQ[l.freq]||'Mensual').toLowerCase()} ${esc(dpText(l.freq||'m',l.dp)).toLowerCase()} · ${new Date(l.createdAt).toLocaleDateString('es-AR')}</small><small>📱 ${esc(l.phone)} · ✉ ${esc(l.email)} ✔</small><a href="https://wa.me/${esc(String(l.phone).replace(/\D/g,''))}" style="color:var(--green);font-weight:700">Escribir por WhatsApp</a></div><div style="display:flex;flex-direction:column;gap:4px"><button class="btn s" data-dni="${l.id}">${l.dniOk?'Quitar check':'DNI ok'}</button><button class="btn s x" data-dl="${l.id}">Borrar</button></div></div>`).join('')||'<p class="note">Todavía no hay pedidos.</p>';
   document.querySelectorAll('[data-dni]').forEach(b=>b.onclick=()=>{const l=S.leads.find(x=>x.id===b.dataset.dni);put('leads',{...l,dniOk:!l.dniOk})});
   document.querySelectorAll('[data-dl]').forEach(b=>b.onclick=()=>del('leads',b.dataset.dl));
   document.querySelectorAll('[data-ok]').forEach(b=>b.onclick=()=>{const r=S.receipts.find(x=>x.id===b.dataset.ok),x=r&&S.sales.find(v=>v.tok===r.sid);if(x&&x.paid<x.n)put('sales',{...x,paid:x.paid+1});del('receipts',b.dataset.ok)});
@@ -396,12 +406,31 @@ function leerMsg(t){const L=t.split(/\n/).map(x=>x.trim()).filter(Boolean),pr=/\
   let costo=null;for(const l of L)if(/contado|efectivo/i.test(l)&&val(l)){costo=val(l);break}
   if(!costo)for(const l of L)if(val(l)){costo=val(l);break}
   const rest=L.filter(l=>!pr.test(l));return[{nombre:(rest[0]||'').slice(0,80),descripcion:rest.slice(1).join(' ').slice(0,250),costo}]}
-let _mi=[];
+let _mi=[],_shot=null;
+/* --- captura de la distribuidora: OCR + recorte de la foto --- */
+async function ocr(src,prog){if(!window.Tesseract)await new Promise((ok,no)=>{const t=document.createElement('script');t.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';t.onload=ok;t.onerror=no;document.head.appendChild(t)});
+  const r=await Tesseract.recognize(src,'spa',{logger:m=>{if(m.status==='recognizing text')prog(Math.round(m.progress*100))}});return r.data.text}
+function limpiarOCR(t){const junk=l=>/^(hoy|ayer)\b|\d{1,2}:\d{2}|responder/i.test(l)||l.replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ0-9]/g,'').length<3;
+  let L=t.replace(/\bS(?=\s?\d{1,3}\.\d{3})/g,'$').split(/\n/).map(x=>x.trim()).filter(x=>x&&!junk(x));
+  const caps=l=>{const a=l.replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]/g,'');return a.length>=3&&a.replace(/[^A-ZÁÉÍÓÚÑ]/g,'').length/a.length>.7};
+  const i=L.findIndex(l=>caps(l)&&l.length>=8);if(i>0)L=L.slice(i);
+  if(L.length>1&&caps(L[1])&&L[1].length<=18&&!/\$/.test(L[1])){L[0]+=' '+L[1];L.splice(1,1)}
+  return L.join('\n')}
+async function recortar(f){try{const i=await loadImg(f),k=Math.min(1,400/i.height),c=document.createElement('canvas');c.width=Math.max(1,Math.round(i.width*k));c.height=Math.max(1,Math.round(i.height*k));
+    const g=c.getContext('2d');g.drawImage(i,0,0,c.width,c.height);const d=g.getImageData(0,0,c.width,c.height).data;let best=[0,0],s=-1;
+    for(let y=0;y<=c.height;y++){let m=0;if(y<c.height){let t=0;for(let x=0;x<c.width;x++){const p=(y*c.width+x)*4;t+=d[p]*.3+d[p+1]*.59+d[p+2]*.11}m=t/c.width}
+      if(y<c.height&&m>50){if(s<0)s=y}else if(s>=0){if(y-s>best[1]-best[0])best=[s,y];s=-1}}
+    if(best[1]-best[0]<c.height*.2)return f;
+    const y0=Math.round(best[0]/k),h=Math.min(i.height-y0,Math.round((best[1]-best[0])/k)),o=document.createElement('canvas');o.width=i.width;o.height=h;o.getContext('2d').drawImage(i,0,y0,i.width,h,0,0,i.width,h);
+    return await new Promise(ok=>o.toBlob(b=>ok(b?new File([b],'producto.jpg',{type:'image/jpeg'}):f),'image/jpeg',.9))}catch(e){return f}}
 function drawM(){const el=$('mres');if(!el)return;const m=num('pm')||0;
   el.innerHTML=_mi.map((x,i)=>{const c=x.costo,p=c?{cost:c,margin:m}:null;
     return `<div class="item" style="align-items:flex-start"><div><b>${esc(x.nombre)}</b><small>${esc(x.descripcion||'')}</small>`+(p?`<small>Costo ${money(c)} · Contado ${money(contado(p))} · ganancia ${money(contado(p)-c)}</small>`+NS.map(n=>{const t=financed(p,n);return `<small>${n} cuotas de ${money(t/n)} · total ${money(t)} · ganancia ${money(t-c)}</small>`}).join(''):'<small class="neg">No encontré el precio: cargalo a mano.</small>')+`</div><button class="btn s g" data-mu="${i}" type="button">Usar</button></div>`}).join('');
-  el.querySelectorAll('[data-mu]').forEach(b=>b.onclick=()=>{const x=_mi[b.dataset.mu];$('pn').value=x.nombre;$('pc').value=x.costo||'';$('pd').value=x.descripcion||'';$('pmsg').textContent='✔ Cargado desde el mensaje. Agregá la foto, revisá y guardá.';$('pn').scrollIntoView({behavior:'smooth',block:'center'})})}
-function cuotasTxt(p){return '*'+p.name+'*\n'+(p.desc?p.desc+'\n':'')+'\nContado: '+money(contado(p))+'\n\nEn cuotas:\n'+NS.map(n=>{const t=financed(p,n);return '• '+n+' cuotas de '+money(t/n)+' (total '+money(t)+')'}).join('\n')+'\n\nLa 1ª cuota se paga hoy y las demás una por mes.'}
+  el.querySelectorAll('[data-mu]').forEach(b=>b.onclick=()=>{const x=_mi[b.dataset.mu];$('pn').value=x.nombre;$('pc').value=x.costo||'';$('pd').value=x.descripcion||'';$('pmsg').textContent='✔ Cargado desde el mensaje. Agregá la foto, revisá y guardá.';
+    if(_shot){try{const dt=new DataTransfer();dt.items.add(_shot);$('pf').files=dt.files;fotoIA='';$('pia').style.display='';$('pprev').innerHTML='';
+      if(fb&&fb.fn){$('pmsg').textContent='✔ Datos cargados. ✨ Armando la foto con IA…';setTimeout(()=>$('pmej').click(),300)}else $('pmsg').textContent='✔ Datos cargados y foto recortada de la captura. Revisá y guardá.'}catch(e){}}
+    $('pn').scrollIntoView({behavior:'smooth',block:'center'})})}
+function cuotasTxt(p){return '*'+p.name+'*\n'+(p.desc?p.desc+'\n':'')+'\nContado: '+money(contado(p))+'\n\nEn cuotas:\n'+NS.map(n=>{const t=financed(p,n);return '• '+n+' cuotas de '+money(t/n)}).join('\n')+'\n\nLa 1ª cuota se paga hoy y las demás una por mes.'}
 async function shareCuotas(p,how){const t=cuotasTxt(p),wa=()=>window.open('https://wa.me/?text='+encodeURIComponent(t),'_blank');
   if(how==='wa')return wa();
   try{const d={text:t,title:p.name};if(p.photo){const b=await (await fetch(p.photo)).blob(),f=new File([b],'producto.jpg',{type:b.type||'image/jpeg'});if(navigator.canShare&&navigator.canShare({files:[f]}))d.files=[f]}
