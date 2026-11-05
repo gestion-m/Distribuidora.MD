@@ -56,6 +56,20 @@ details.sub>summary{cursor:pointer;font-weight:700;font-size:.85rem;padding:10px
 .chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 8px}
 .chips button{flex:none;white-space:nowrap;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:99px;padding:7px 12px;font-weight:600;font-size:.78rem;font-family:inherit}
 .chips button.on{background:var(--gold);color:#14150f;border-color:var(--gold)}
+.cmp{display:grid;grid-template-columns:.7fr 1fr 1fr;gap:6px;align-items:stretch}
+.cmp .h{font-size:.66rem;font-weight:700;text-align:center;padding:6px 2px;color:var(--muted)}
+.cmp .n{font-weight:700;font-size:.8rem;display:flex;align-items:center}
+.cmp .ca,.cmp .cx{border:2px solid var(--line);border-radius:12px;padding:8px 4px;text-align:center}
+.cmp .ca{border-color:var(--green)}.cmp .cx{border-color:var(--gold)}
+.cmp b{font-family:'Anton',sans-serif;font-weight:400;font-size:1.15rem;display:block}
+.cmp small{display:block;font-size:.65rem;color:var(--muted)}
+#crb{position:absolute;border:2px solid var(--gold);box-shadow:0 0 0 9999px #0009;cursor:move;touch-action:none}
+#crb i{position:absolute;width:36px;height:36px;touch-action:none}
+#crb i::after{content:"";position:absolute;width:16px;height:16px;background:var(--gold);border-radius:3px}
+#crb i[data-h=nw]{left:0;top:0}#crb i[data-h=nw]::after{left:0;top:0}
+#crb i[data-h=ne]{right:0;top:0}#crb i[data-h=ne]::after{right:0;top:0}
+#crb i[data-h=sw]{left:0;bottom:0}#crb i[data-h=sw]::after{left:0;bottom:0}
+#crb i[data-h=se]{right:0;bottom:0}#crb i[data-h=se]::after{right:0;bottom:0}
 @media print{.top,nav,.noprint,.wa,button,body::before{display:none!important}body{background:#fff;color:#000}main{max-width:none;padding:0}.card{break-inside:avoid;border-color:#999;background:#fff}}
 </style>
 </head>
@@ -108,9 +122,14 @@ const num=id=>Number($(id).value)||0;
 /* ---------- datos: Firebase (en vivo) o locales ---------- */
 try{const l=JSON.parse(localStorage.getItem('cv')||'null');if(l)Object.assign(S,l)}catch(e){}
 function localSave(){try{localStorage.setItem('cv',JSON.stringify(S))}catch(e){}}
-const pubDoc=p=>({n:p.name,k:Math.round(contado(p)/100)*100,f:Object.fromEntries(NS.map(n=>[n,financed(p,n)])),ph:p.photo||'',ds:p.desc||'',d:p.stock>0,c:catOf(p)});
+const pubDoc=p=>({n:p.name,k:Math.round(contado(p)/100)*100,f:Object.fromEntries(NS.map(n=>[n,financed(p,n)])),fv:Object.fromEntries(NS.map(n=>[n,financed(p,n,true)])),ph:p.photo||'',ds:p.desc||'',d:p.stock>0,c:catOf(p)});
 async function pub(list){if(!fb)return;const{doc,setDoc}=fb.fs;try{await setDoc(doc(fb.db,'catalog','_cfg'),{w:S.config.wa||'',a:S.config.anticipo,pm:S.config.promoMin||5,alias:S.config.alias||'',titular:S.config.titular||''});for(const p of list)await setDoc(doc(fb.db,'catalog',p.id),pubDoc(p))}catch(e){$('sync').textContent='Error al publicar catálogo'}}
-async function pubPay(s){if(!fb||!s.tok)return;try{await fb.fs.setDoc(fb.fs.doc(fb.db,'pay',s.tok),{n:s.client.split(' ')[0],prod:s.pname,cuotas:s.n,paid:s.paid,cuota:Math.round(cuotaOf(s)),total:s.total,saldo:Math.round(s.total-cobrado(s)),next:s.paid<s.n?iso(nextDue(s)):'',pun:punit(),fq:FQ[s.freq||'m']+(s.freq&&s.dp!=null?' · '+dpText(s.freq,s.dp).toLowerCase():'')})}catch(e){}}
+const _th={};
+async function thumb(u,m=640,q=.7){if(!u)return '';const k=u.length+':'+u.slice(-24);if(_th[k])return _th[k];try{const i=await new Promise((ok,no)=>{const im=new Image();im.onload=()=>ok(im);im.onerror=no;im.src=u}),z=Math.min(1,m/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(i.width*z));c.height=Math.max(1,Math.round(i.height*z));c.getContext('2d').drawImage(i,0,0,c.width,c.height);return _th[k]=c.toDataURL('image/jpeg',q)}catch(e){return ''}}
+const maskDni=d=>{const x=String(d||'').replace(/\D/g,'');return x?'••.•••.'+x.slice(-3):''};
+async function pubPay(s){if(!fb||!s.tok)return;try{const pr=S.products.find(x=>x.id===s.pid),ph=pr?await thumb(pr.photo):'',sched=Array.from({length:s.n},(_,k)=>iso(dueN(s,k)));
+  await fb.fs.setDoc(fb.fs.doc(fb.db,'pay',s.tok),{n:s.client.split(' ')[0],prod:s.pname,cuotas:s.n,paid:s.paid,cuota:Math.round(cuotaOf(s)),total:s.total,saldo:Math.round(s.total-cobrado(s)),next:s.paid<s.n?iso(nextDue(s)):'',pun:punit(),fq:FQ[s.freq||'m']+(s.freq&&s.dp!=null?' · '+dpText(s.freq,s.dp).toLowerCase():''),
+    ph,date:s.date||'',adel:!!s.adel,ant:s.anticipo||0,nm:s.client||'',dni:maskDni(s.dni),addr:s.addr||'',sched})}catch(e){}}
 async function put(col,obj){
   if(col==='config'){S.config=obj}else{const i=S[col].findIndex(x=>x.id===obj.id);i<0?S[col].push(obj):S[col][i]=obj}
   if(fb){try{await fb.fs.setDoc(fb.fs.doc(fb.db,col,col==='config'?'main':obj.id),obj)}catch(e){$('sync').textContent='Error al guardar'}}else localSave();
@@ -124,20 +143,72 @@ async function del(col,id){
   refresh();
 }
 function loadImg(f){return new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=()=>no(new Error('img'));i.src=URL.createObjectURL(f)})}
-async function shrink(f,m=480,q=.72){let i;
+async function shrink(f,m=860,q=.78){let i;
   try{i=await loadImg(f)}catch(e){
     if(!/heic|heif/i.test((f.type||'')+(f.name||'')))throw e;
     try{if(!window.heic2any)await new Promise((ok,no)=>{const t=document.createElement('script');t.src='https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js';t.onload=ok;t.onerror=no;document.head.appendChild(t)});
       let bl=await window.heic2any({blob:f,toType:'image/jpeg',quality:.8});if(Array.isArray(bl))bl=bl[0];i=await loadImg(bl)}catch(x){throw new Error('img')}}
   const k=Math.min(1,m/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=i.width*k;c.height=i.height*k;c.getContext('2d').drawImage(i,0,0,c.width,c.height);return c.toDataURL('image/jpeg',q)}
 
+/* ---------- ampliar foto (pantalla completa) ---------- */
+function lightbox(src,title,share){let m=$('lbx');if(m)m.remove();m=document.createElement('div');m.id='lbx';
+  m.style.cssText='position:fixed;inset:0;z-index:80;background:#000;display:flex;flex-direction:column;overflow:auto;-webkit-overflow-scrolling:touch';
+  m.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 14px;padding-top:calc(12px + env(safe-area-inset-top,0px));color:#fff;position:sticky;top:0;background:#000c;z-index:1"><b style="font-size:.95rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(title||'')}</b><span style="display:flex;gap:8px;flex:none">${share?'<button class="btn s g" id="lbs" type="button">📤 Compartir</button>':''}<button class="btn s" id="lbx0" type="button" style="background:#fff;color:#000">✕ Cerrar</button></span></div><div style="flex:1;display:flex;align-items:center;justify-content:center;padding:6px"><img src="${src}" alt="" style="max-width:100%;max-height:calc(100vh - 110px);object-fit:contain"></div><div style="color:#fff9;text-align:center;font-size:.7rem;padding:6px 6px calc(10px + env(safe-area-inset-bottom,0px))">Pellizcá para acercar · tocá afuera de la foto para cerrar</div>`;
+  document.body.appendChild(m);
+  m.onclick=e=>{if(e.target===m||e.target.id==='lbx0'||e.target===m.children[1])m.remove()};
+  if(share)$('lbs').onclick=e=>{e.stopPropagation();share()}}
+document.addEventListener('click',e=>{const i=e.target.closest&&e.target.closest('img[data-zoom]');if(i){e.preventDefault();lightbox(i.src,i.dataset.t||'')}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){const m=$('lbx');if(m)m.remove()}});
+
+/* ---------- recortar la foto al subirla ---------- */
+async function fileToImg(f){try{return await loadImg(f)}catch(e){
+  if(!/heic|heif/i.test((f.type||'')+(f.name||'')))throw e;
+  try{if(!window.heic2any)await new Promise((ok,no)=>{const t=document.createElement('script');t.src='https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js';t.onload=ok;t.onerror=no;document.head.appendChild(t)});
+    let bl=await window.heic2any({blob:f,toType:'image/jpeg',quality:.8});if(Array.isArray(bl))bl=bl[0];return await loadImg(bl)}catch(x){throw new Error('img')}}}
+/* devuelve: la foto recortada (File) · la original si elige "Sin recortar" · null si cancela */
+function cropImage(f){return new Promise(async ok=>{
+  let img;try{img=await fileToImg(f)}catch(e){return ok(f)}
+  const W=img.naturalWidth||img.width,H=img.naturalHeight||img.height,old=$('crm');if(old)old.remove();
+  const m=document.createElement('div');m.id='crm';
+  m.style.cssText='position:fixed;inset:0;z-index:90;background:#000e;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:12px;padding-top:calc(12px + env(safe-area-inset-top,0px));padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))';
+  m.innerHTML=`<div style="color:#fff;font-weight:700;text-align:center">✂ Recortá la foto<br><span style="font-weight:400;font-size:.75rem;color:#fffb">Arrastrá el recuadro o estirá las esquinas</span></div><div id="crs" style="position:relative;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;border-radius:6px"></div><div id="cra" class="chips" style="justify-content:center"></div><div style="display:grid;grid-template-columns:1fr 1.2fr 1.2fr;gap:8px;width:min(100%,460px)"><button class="btn x" id="crc" type="button" style="margin:0;background:#fff">Cancelar</button><button class="btn" id="crn" type="button" style="margin:0;background:#fff;color:#000">Sin recortar</button><button class="btn g" id="cry" type="button" style="margin:0">Recortar ✔</button></div>`;
+  document.body.appendChild(m);
+  const st=$('crs'),k=Math.min(Math.min(innerWidth-24,720)/W,Math.max(120,innerHeight-230)/H),dw=Math.max(60,Math.round(W*k)),dh=Math.max(60,Math.round(H*k));
+  st.style.width=dw+'px';st.style.height=dh+'px';
+  st.innerHTML=`<img src="${img.src}" alt="" style="width:100%;height:100%;display:block;pointer-events:none"><div id="crb"><i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i></div>`;
+  const b=$('crb'),MIN=40;let r={x:0,y:0,w:dw,h:dh},ar=0;
+  const show=()=>{b.style.left=r.x+'px';b.style.top=r.y+'px';b.style.width=r.w+'px';b.style.height=r.h+'px'};show();
+  const setAr=a=>{ar=a;if(!a)return;let w=dw,h=w/a;if(h>dh){h=dh;w=h*a}r={x:(dw-w)/2,y:(dh-h)/2,w,h};show()};
+  const AR=[['Libre',0],['1:1',1],['4:3',4/3],['3:4',3/4]];
+  $('cra').innerHTML=AR.map((a,i)=>`<button type="button" data-a="${i}" class="${i?'':'on'}">${a[0]}</button>`).join('');
+  $('cra').querySelectorAll('button').forEach(x=>x.onclick=()=>{$('cra').querySelectorAll('button').forEach(y=>y.classList.remove('on'));x.classList.add('on');setAr(AR[+x.dataset.a][1])});
+  b.onpointerdown=e=>{e.preventDefault();const h=e.target.dataset&&e.target.dataset.h;try{b.setPointerCapture(e.pointerId)}catch(x){}
+    const sx=e.clientX,sy=e.clientY,o={...r};
+    const mv=ev=>{const dx=ev.clientX-sx,dy=ev.clientY-sy;
+      if(!h){r={x:Math.min(dw-o.w,Math.max(0,o.x+dx)),y:Math.min(dh-o.h,Math.max(0,o.y+dy)),w:o.w,h:o.h}}
+      else{const west=h.includes('w'),north=h.includes('n'),ax=west?o.x+o.w:o.x,ay=north?o.y+o.h:o.y;
+        let px=(west?o.x:o.x+o.w)+dx,py=(north?o.y:o.y+o.h)+dy;px=Math.min(dw,Math.max(0,px));py=Math.min(dh,Math.max(0,py));
+        const roomX=west?ax:dw-ax,roomY=north?ay:dh-ay;
+        let w=Math.min(roomX,Math.max(MIN,Math.abs(px-ax))),hh=Math.min(roomY,Math.max(MIN,Math.abs(py-ay)));
+        if(ar){hh=w/ar;if(hh>roomY){hh=roomY;w=hh*ar}}
+        r={x:west?ax-w:ax,y:north?ay-hh:ay,w,h:hh}}
+      show()};
+    const up=()=>{b.removeEventListener('pointermove',mv);b.removeEventListener('pointerup',up);b.removeEventListener('pointercancel',up)};
+    b.addEventListener('pointermove',mv);b.addEventListener('pointerup',up);b.addEventListener('pointercancel',up)};
+  $('crc').onclick=()=>{m.remove();ok(null)};
+  $('crn').onclick=()=>{m.remove();ok(f)};
+  $('cry').onclick=()=>{m.remove();if(r.w>=dw-2&&r.h>=dh-2)return ok(f);
+    const sw=r.w/k,sh=r.h/k,mk=Math.min(1,1600/Math.max(sw,sh)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(sw*mk));c.height=Math.max(1,Math.round(sh*mk));
+    c.getContext('2d').drawImage(img,r.x/k,r.y/k,sw,sh,0,0,c.width,c.height);
+    c.toBlob(bl=>ok(bl?new File([bl],'foto.jpg',{type:'image/jpeg'}):f),'image/jpeg',.92)}})}
+
 
 /* ---------- cálculos ---------- */
 const NS=[2,3,4,5,6];
 const CATN=[2,3,4,5,6]; // cuotas que ve el cliente en el catálogo
-/* Coeficientes base (precio contado × coeficiente = total financiado). Salen de la tabla de planes con DNI (cuota × cantidad de cuotas). El de 5 cuotas es un valor intermedio razonable: confirmalo. Podés cambiarlos desde Productos > Ajustes. */
-const COEF_BASE={2:1.3034,3:1.4478,4:1.5468,5:1.70,6:1.8468}; // ADELANTADA: 1ª cuota se paga hoy
-const COEF_V={2:1.3556,3:1.5333,4:1.6533,5:1.8222,6:1.95}; // VENCIDA (promo): 1ª cuota el mes que viene. Salen de la pantalla del sistema (45.000); el de 6 es estimado
+/* Coeficientes tomados del sistema (venta de $382.200). ADELANTADA = cuota × n ÷ contado con la 1ª cuota HOY. VENCIDA = 1ª cuota el mes que viene (más cara). El de 2 cuotas VENCIDA estaba tapado por el cursor en la foto: se usó 249.000, confirmalo. Podés cambiarlos desde Productos > Ajustes. */
+const COEF_BASE={2:1.16692,3:1.34223,4:1.50706,5:1.63527,6:1.75824}; // ADELANTADA: 1ª cuota se paga hoy (sistema: 223.000 · 171.000 · 144.000 · 125.000 · 112.000)
+const COEF_V={2:1.30298,3:1.44427,4:1.58038,5:1.72684,6:1.88383}; // VENCIDA: 1ª cuota el mes que viene (sistema: ~249.000 · 184.000 · 151.000 · 132.000 · 120.000)
 const coefOf=(n,v)=>{const o=v?S.config.coefV:S.config.coef;return o&&o[n]>0?o[n]:(v?COEF_V[n]:COEF_BASE[n])||1+S.config.colchon+S.config.recargo*n/2};
 const normAR=t=>{let d=String(t||'').replace(/\D/g,'').replace(/^00/,'');if(d.startsWith('54'))d=d.slice(2);if(d.startsWith('9')&&d.length>=11)d=d.slice(1);d=d.replace(/^0+/,'');if(d.length>10)for(const k of [2,3,4])if(d.slice(k,k+2)==='15'&&d.length-2===10){d=d.slice(0,k)+d.slice(k+2);break}return d};
 const e164g=t=>{const d=normAR(t);return d.length===10?'+549'+d:'+'+String(t||'').replace(/\D/g,'')};
@@ -295,12 +366,12 @@ function catView(){
       banner=`<div class="card" style="border:2px solid var(--green)"><h2>⭐ CLIENTES FRECUENTES</h2><p style="margin:0">Si ya nos compraste <b>${pm} veces o más</b>, pagás tu <b>primera cuota recién el mes que viene</b>.</p>${cfg.w?`<a class="btn g" style="display:block;text-align:center;text-decoration:none" href="https://wa.me/${esc(cfg.w)}?text=${encodeURIComponent('Hola, soy cliente frecuente y quiero consultar por la promo')}">Consultar la promo</a>`:''}</div>`;
     const list=items.sort((a,b)=>a.n.localeCompare(b.n)).filter(it=>(!q||nz(it.n+' '+(it.ds||'')).includes(q))&&(!cf||(it.c||guessCat(it.n))===cf)).map((it,i)=>{const o=open[it.n];
       const rows=o?CATN.map(n=>{const f=(it.f||{})[n]||0,c=f/n;
-        return `<div class="item"><div><b>${n} cuotas de ${money(c)}</b><small>Hoy pagás la 1ª</small></div><button class="btn s g" data-el="${esc(it.n)}|${n}" type="button">Elegir</button></div>`}).join(''):'';
-      return `<div class="card"><div data-o="${esc(it.n)}" style="cursor:pointer">${it.ph?`<img src="${it.ph}" data-pz="${esc(it.n)}" alt="" style="width:100%;max-height:230px;object-fit:cover;border-radius:12px;margin-bottom:10px;cursor:zoom-in">`:''}<h2>${esc(it.n)} <span class="tag">${it.d?'En stock':'A pedido'}</span></h2>${it.ds?`<p style="margin:0 0 8px;color:var(--muted)">${esc(it.ds)}</p>`:''}<div class="kpi" style="margin:8px 0 6px"><span>Precio de contado</span><b>${money(it.k)}</b></div><div class="row"><button class="btn ${o?'':'g'}" style="margin:0 0 6px">${o?'▲ Ocultar cuotas':'Ver cuotas ▼'}</button><button class="btn" data-sh="${esc(it.n)}" type="button" style="margin:0 0 6px">📤 Compartir</button></div></div>${rows}${o?'<p class="note">Tocá "Elegir" en la cantidad de cuotas que te sirva y completá tus datos.</p>':''}</div>`}).join('');
+        return `<div class="item"><div><b>${n} cuotas de ${money(c)}</b><small>Hoy pagás la 1ª · total ${money(f)}</small>${(it.fv||{})[n]?`<small>⭐ Cliente frecuente (1ª el mes que viene): ${n} de ${money(it.fv[n]/n)} · total ${money(it.fv[n])}</small>`:''}</div><button class="btn s g" data-el="${esc(it.n)}|${n}" type="button">Elegir</button></div>`}).join(''):'';
+      return `<div class="card"><div data-o="${esc(it.n)}" style="cursor:pointer">${it.ph?`<img src="${it.ph}" data-pz="${esc(it.n)}" alt="" style="width:100%;max-height:260px;object-fit:contain;background:var(--paper);border-radius:12px;cursor:zoom-in"><p class="note" style="margin:2px 0 8px;text-align:center">🔍 Tocá la foto para verla grande</p>`:''}<h2>${esc(it.n)} <span class="tag">${it.d?'En stock':'A pedido'}</span></h2>${it.ds?`<p style="margin:0 0 8px;color:var(--muted)">${esc(it.ds)}</p>`:''}<div class="kpi" style="margin:8px 0 6px"><span>Precio de contado</span><b>${money(it.k)}</b></div><div class="row"><button class="btn ${o?'':'g'}" style="margin:0 0 6px">${o?'▲ Ocultar cuotas':'Ver cuotas ▼'}</button><button class="btn" data-sh="${esc(it.n)}" type="button" style="margin:0 0 6px">📤 Compartir</button></div></div>${rows}${o?'<p class="note">Tocá "Elegir" en la cantidad de cuotas que te sirva y completá tus datos.</p>':''}</div>`}).join('');
     $('cl').innerHTML=banner+(list||'<p class="note">'+(q?'No encontramos ese producto. Escribinos por WhatsApp y te ayudamos.':'Todavía no hay productos.')+'</p>');
     $('cl').querySelectorAll('[data-o]').forEach(e=>e.onclick=()=>{open[e.dataset.o]=!open[e.dataset.o];d()});
     $('cl').querySelectorAll('[data-sh]').forEach(b=>b.onclick=e=>{e.stopPropagation();const it=items.find(x=>x.n===b.dataset.sh);if(it)shareCat(it)});
-    $('cl').querySelectorAll('[data-pz]').forEach(im=>im.onclick=e=>{e.stopPropagation();const it=items.find(x=>x.n===im.dataset.pz);if(!it)return;iaModal(esc(it.n),`<img src="${it.ph}" alt="" style="width:100%;border-radius:12px"><button class="btn g" id="pzs" type="button" style="width:100%">📤 Compartir</button>`);$('pzs').onclick=()=>shareCat(it)});
+    $('cl').querySelectorAll('[data-pz]').forEach(im=>im.onclick=e=>{e.stopPropagation();const it=items.find(x=>x.n===im.dataset.pz);if(!it)return;lightbox(it.ph,it.n,()=>shareCat(it))});
     $('cl').querySelectorAll('[data-el]').forEach(b=>b.onclick=()=>{const s=b.dataset.el,i=s.lastIndexOf('|'),nm=s.slice(0,i),n=s.slice(i+1);
       const lp=$('lp2');if([...lp.options].every(x=>x.value!==nm)){const o=document.createElement('option');o.textContent=nm;lp.appendChild(o)}lp.value=nm;$('ln').value=n;
       const ld=$('lead');ld.style.display='';ld.scrollIntoView({behavior:'smooth',block:'start'})})};
@@ -327,13 +398,22 @@ async function leadInit(){
 function payView(tok){
   document.title='Mi cuenta';$('nav').style.display='none';document.querySelector('.top h1').textContent='MI CUENTA';$('sync').textContent='';
   $('app').innerHTML='<div id="pv"><p class="note">Cargando…</p></div>';
-  let p=null,cfg={},sent='';
+  let p=null,cfg={},sent='',detOpen=false;
   const draw=()=>{waFab(cfg.w,'Hola, tengo una consulta sobre mi cuenta');if(!p){$('pv').innerHTML='<div class="card">No encontramos tu cuenta. Pedile el link de nuevo a quien te vendió.</div>';return}
     const done=p.paid>=p.cuotas,dl=done||!p.next?0:daysLate(new Date(p.next+'T23:59:00')),l=dl>0,mo=l?Math.round(p.cuota*(p.pun||0)/100*dl):0;
-    $('pv').innerHTML=`<div class="card"><h2>HOLA ${esc(p.n.toUpperCase())}</h2><p>${esc(p.prod)}${p.fq?' · pago '+esc(p.fq):''}</p><div class="kpis"><div class="kpi"><span>Cuotas pagadas</span><b>${p.paid} de ${p.cuotas}</b></div><div class="kpi"><span>Valor de cuota</span><b>${money(p.cuota)}</b></div><div class="kpi"><span>Te falta pagar</span><b>${money(p.saldo)}</b></div><div class="kpi"><span>Próximo vencimiento</span><b class="${l?'neg':''}">${done?'—':new Date(p.next+'T12:00:00').toLocaleDateString('es-AR')}</b>${l?`<div class="kpi"><span>Punitorios (${dl} días de atraso)</span><b class="neg">${money(mo)}</b></div>`:''}</div>${l?'<p class="neg"><b>Tu cuota está vencida. Se suman punitorios por cada día de atraso: pagala cuanto antes.</b></p>':''}${done?'<p class="pos"><b>¡Terminaste de pagar! Gracias.</b></p>':''}</div>`+
-    (done?'':`<div class="card"><h2>CÓMO PAGAR</h2><p>Transferí <b>${money(p.cuota+mo)}</b>${mo?' (cuota + punitorios)':''} a este alias:</p><div class="kpi"><span>Alias${cfg.titular?' · '+esc(cfg.titular):''}</span><b id="al">${esc(cfg.alias||'Consultá el alias por WhatsApp')}</b></div><button class="btn s" id="cp2">Copiar alias</button>
+    const fdt=x=>x?new Date(x+'T12:00:00').toLocaleDateString('es-AR'):'—',
+      sch=(p.sched||[]).map((d,k)=>{const ok=k<p.paid,cur=k===p.paid,lt=cur&&l;return `<div class="item"><div><b>Cuota ${k+1} de ${p.cuotas}</b><small>${money(p.cuota)} · vence ${fdt(d)}</small></div><span class="tag ${ok?'ok':lt?'late':''}">${ok?'Pagada ✔':lt?'Vencida':cur?'Próxima':'Pendiente'}</span></div>`}).join(''),
+      det=`<details class="acc card" id="pdet" ${detOpen?'open':''}><summary><h2>🧾 Ver detalles de mi compra</h2><b style="font-family:Anton,sans-serif;font-weight:400;font-size:1.2rem">${money(p.total)}</b></summary>
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:10px">${p.ph?`<img src="${p.ph}" data-zoom="1" data-t="${esc(p.prod)}" alt="" style="width:88px;height:88px;object-fit:cover;border-radius:12px;cursor:zoom-in;flex:none">`:''}<div><b>${esc(p.prod)}</b>${p.ph?'<small class="note" style="display:block;margin:2px 0 0">🔍 Tocá la foto para verla grande</small>':''}</div></div>
+      <div class="kpis"><div class="kpi"><span>Fecha de compra</span><b>${fdt(p.date)}</b></div><div class="kpi"><span>Plan</span><b style="font-size:.95rem">${p.adel===true?'1ª cuota al comprar':p.adel===false?'1ª cuota el mes que viene':'—'}</b></div><div class="kpi"><span>Total financiado</span><b>${money(p.total)}</b></div><div class="kpi"><span>Cuotas</span><b>${p.cuotas} de ${money(p.cuota)}</b></div>${p.ant>0?`<div class="kpi"><span>Anticipo</span><b>${money(p.ant)}</b></div>`:''}</div>
+      <h3 style="margin:14px 0 4px;font-size:1rem">DATOS DE LA COMPRA</h3>
+      <p style="margin:0;line-height:1.5">${p.nm?esc(p.nm)+'<br>':''}${p.dni?'DNI '+esc(p.dni)+'<br>':''}${p.addr?esc(p.addr)+'<br>':''}${p.fq?'Pago '+esc(p.fq):''}</p>
+      ${sch?`<h3 style="margin:14px 0 2px;font-size:1rem">SEGUIMIENTO DE CUOTAS</h3>${sch}`:''}</details>`;
+    $('pv').innerHTML=det+`<div class="card"><h2>HOLA ${esc(p.n.toUpperCase())}</h2><p>${esc(p.prod)}${p.fq?' · pago '+esc(p.fq):''}</p><div class="kpis"><div class="kpi"><span>Cuotas pagadas</span><b>${p.paid} de ${p.cuotas}</b></div><div class="kpi"><span>Valor de cuota</span><b>${money(p.cuota)}</b></div><div class="kpi"><span>Te falta pagar</span><b>${money(p.saldo)}</b></div><div class="kpi"><span>Próximo vencimiento</span><b class="${l?'neg':''}">${done?'—':new Date(p.next+'T12:00:00').toLocaleDateString('es-AR')}</b>${l?`<div class="kpi"><span>Punitorios (${dl} días de atraso)</span><b class="neg">${money(mo)}</b></div>`:''}</div>${l?'<p class="neg"><b>Tu cuota está vencida. Se suman punitorios por cada día de atraso: pagala cuanto antes.</b></p>':''}${done?'<p class="pos"><b>¡Terminaste de pagar! Gracias.</b></p>':''}</div>`+
+    (done?'':`<div class="card"><h2>CÓMO PAGAR</h2><p>Transferí <b>${money(p.cuota+mo)}</b>${mo?' (cuota + punitorios)':''} a este alias:</p><div class="kpi" id="alk" style="cursor:pointer"><span>Alias${cfg.titular?' · '+esc(cfg.titular):''}</span><b id="al">${esc(cfg.alias||'Consultá el alias por WhatsApp')}</b><small class="note" style="display:block;margin:2px 0 0">🧾 Tocá acá para ver los datos de tu compra</small></div><button class="btn s" id="cp2">Copiar alias</button> <button class="btn s g" id="pdv" type="button">🧾 Ver detalles de mi compra</button>
       <label style="margin-top:12px">Subí el comprobante de la cuota ${p.paid+1}</label><input id="rf" type="file" accept="image/*"><button class="btn g" id="rs">Enviar comprobante</button><p class="note ${sent.startsWith('✔')?'pos':'neg'}" id="rm">${sent}</p></div>`);
-    if($('cp2'))$('cp2').onclick=()=>{try{navigator.clipboard.writeText(cfg.alias||'');$('cp2').textContent='¡Copiado!'}catch(e){}};
+    if($('cp2'))$('cp2').onclick=e=>{e.stopPropagation();try{navigator.clipboard.writeText(cfg.alias||'');$('cp2').textContent='¡Copiado!'}catch(x){}};
+    {const sd=()=>{const d=$('pdet');if(!d)return;d.open=true;detOpen=true;d.scrollIntoView({behavior:'smooth',block:'start'})};if($('alk'))$('alk').onclick=sd;if($('pdv'))$('pdv').onclick=sd;if($('pdet'))$('pdet').ontoggle=()=>{detOpen=$('pdet').open}}
     if($('rs'))$('rs').onclick=async()=>{const f=$('rf').files[0];if(!f){$('rm').textContent='Elegí la foto del comprobante';return}
       try{await fb.fs.setDoc(fb.fs.doc(fb.db,'receipts',tok+'_'+Date.now()),{sid:tok,n:p.paid+1,img:await shrink(f,900,.6),at:Date.now()});sent='✔ Recibimos tu comprobante. Lo revisamos y se acredita la cuota.';draw()}catch(e){$('rm').textContent='No se pudo enviar. Probá con una foto más chica.'}}};
   fb.fs.onSnapshot(fb.fs.doc(fb.db,'pay',tok),x=>{p=x.exists()?x.data():null;draw()},()=>{$('pv').innerHTML='<div class="card">No se pudo cargar tu cuenta.</div>'});
@@ -373,7 +453,7 @@ function bind(){
     if(it.length<2){it=[];try{if(fb&&fb.fn){const r=await ia('mensaje',{text:t});it=r.items||[]}}catch(e){}if(!it.length)it=leerMsg(t)}
     _mi=aplicarMoneda(it);drawM();b.disabled=false});
   const vf=$('vfr');if(vf){const fl=()=>{$('vdp').innerHTML=dpOpts(vf.value);$('vdl').textContent=vf.value==='w'?'Día de la semana':'Período de pago';$('vddw').style.display=vf.value==='w'?'none':''};vf.onchange=fl;fl()}
-  const pf=$('pf');if(pf)pf.onchange=async()=>{fotoIA='';if($('pprev'))$('pprev').innerHTML='';const f=pf.files[0];if($('pia'))$('pia').style.display=f?'':'none';if(!f)return;if(!(fb&&fb.fn)){$('pmsg').textContent='La IA todavía no está configurada.';return}
+  const pf=$('pf');if(pf)pf.onchange=async()=>{fotoIA='';if($('pprev'))$('pprev').innerHTML='';let f=pf.files[0];if(f){const cc=await cropImage(f);if(!cc){pf.value='';f=null}else if(cc!==f){const dt=new DataTransfer();dt.items.add(cc);pf.files=dt.files;f=cc}}if($('pia'))$('pia').style.display=f?'':'none';if(!f)return;if(!(fb&&fb.fn)){$('pmsg').textContent='La IA todavía no está configurada.';return}
     $('pmsg').textContent='✨ La IA está mirando la foto… (puede tardar unos segundos)';
     try{const r=await ia('producto',{img:await shrink(f,640,.7)}),j=r.json||{};
       if(!$('pn').value.trim())$('pn').value=j.nombre||'';if(!$('pd').value.trim())$('pd').value=j.descripcion||'';
@@ -413,14 +493,14 @@ function refresh(){
   if($('cp')){const v=keep('cp');$('cp').innerHTML=prodOptions(v,keep('cq'),keep('cc'));if(v)$('cp').value=v;if($('cp').selectedIndex<0)$('cp').selectedIndex=0;
     const p=S.products.find(x=>x.id===$('cp').value);
     $('cres').innerHTML=!p?'<p class="note">Cargá productos en la pestaña Productos.</p>':
-      (p.photo?`<img src="${p.photo}" data-zoom="1" alt="" style="width:100%;max-height:260px;object-fit:contain;border-radius:12px;background:var(--paper);margin-bottom:10px;cursor:zoom-in">`:'<p class="note">Este producto no tiene foto: cargala en Productos con "Cambiar foto".</p>')+`<div class="kpi" style="margin-bottom:10px"><span>Precio de contado</span><b>${money(contado(p))}</b></div><div class="row"><button class="btn g" id="cwa" type="button">📲 WhatsApp</button><button class="btn" id="csh" type="button">📤 Compartir con foto</button></div><button class="btn" id="cgp" type="button" style="width:100%">🎨 Prompt para ChatGPT</button><button class="btn s" id="ced" type="button" style="margin-top:10px">✏ Editar producto / precio</button><div style="margin-top:8px">`+NS.map(n=>{const t=financed(p,n),tv=financed(p,n,true);return `<div class="item"><div><b>${n} cuotas de ${money(t/n)}</b><small>1ª cuota hoy · Total ${money(t)} · +${money(t-contado(p))} vs contado</small><small>Promo (1ª el mes que viene): ${n} de ${money(tv/n)} · Total ${money(tv)}</small></div></div>`}).join('')+`</div>`;
+      (p.photo?`<img src="${p.photo}" data-zoom="1" alt="" style="width:100%;max-height:260px;object-fit:contain;border-radius:12px;background:var(--paper);margin-bottom:10px;cursor:zoom-in">`:'<p class="note">Este producto no tiene foto: cargala en Productos con "Cambiar foto".</p>')+`<div class="kpi" style="margin-bottom:10px"><span>Precio de contado</span><b>${money(contado(p))}</b></div><div class="row"><button class="btn g" id="cwa" type="button">📲 WhatsApp</button><button class="btn" id="csh" type="button">📤 Compartir con foto</button></div><button class="btn" id="cgp" type="button" style="width:100%">🎨 Prompt para ChatGPT</button><button class="btn s" id="ced" type="button" style="margin-top:10px">✏ Editar producto / precio</button><div class="cmp" style="margin-top:12px"><div class="h"></div><div class="h">🟢 Paga la 1ª cuota HOY</div><div class="h">🟠 Paga la 1ª el MES QUE VIENE</div>`+NS.map(n=>{const t=financed(p,n),tv=financed(p,n,true);return `<div class="n">${n} cuotas</div><div class="ca"><b>${money(t/n)}</b><small>Total ${money(t)}</small></div><div class="cx"><b>${money(tv/n)}</b><small>Total ${money(tv)}</small><small class="neg">+${money(tv-t)} que adelantada</small></div>`}).join('')+`</div><p class="note">Mismo producto, distinto plan: pagando la 1ª cuota hoy el total es menor; si la deja para el mes que viene paga más por la financiación. Contado: ${money(contado(p))}.</p>`;
     if(p){$('cwa').onclick=()=>shareCuotas(p,'wa');$('csh').onclick=()=>shareCuotas(p,'sh');$('cgp').onclick=()=>promptGPT(p);$('ced').onclick=()=>editProd(p.id)}}
   {const pdf=$('pdf');if(pdf){const ds=[...new Set(S.products.map(x=>x.dist).filter(Boolean))].sort(),k=ds.join('|');if(pdf.dataset.k!==k){const cur=pdf.value;pdf.innerHTML='<option value="">Todas</option>'+ds.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');pdf.value=ds.includes(cur)?cur:'';pdf.dataset.k=k}}}
   if($('plist')){const q=keep('pq').trim().toLowerCase(),df=keep('pdf'),cf=keep('pcf'),L=S.products.filter(p=>(!q||(p.name+' '+(p.dist||'')).toLowerCase().includes(q))&&(!df||p.dist===df)&&(!cf||catOf(p)===cf));
     $('plist').innerHTML=L.map(p=>`<div class="item"><div style="display:flex;gap:10px;align-items:center">${p.photo?`<img src="${p.photo}" data-zoom="1" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:zoom-in">`:''}<div><b>${esc(p.name)}</b><small>Costo ${money(p.cost)} · Contado ${money(contado(p))} (${+(+p.margin||0).toFixed(1)}%) · Stock ${p.stock}</small><small>🏷 ${esc(catOf(p))}${p.dist?' · 🏬 '+esc(p.dist):''}</small></div></div><div style="display:flex;flex-direction:column;gap:4px"><button class="btn s g" data-ed="${p.id}">✏ Editar</button><button class="btn s" data-shp="${p.id}">📤 Compartir</button><label class="btn s" style="margin:0;text-align:center">${p.photo?'Cambiar foto':'+ Foto'}<input type="file" accept="image/*" data-ph="${p.id}" hidden></label><button class="btn s x" data-d="${p.id}">Borrar</button></div></div>`).join('')||'<p class="note">'+(S.products.length?'No hay productos con ese filtro.':'Todavía no cargaste productos.')+'</p>'}
   if($('vp')){const v=keep('vp');$('vp').innerHTML=prodOptions(v,keep('vq'),keep('vcc'));if(v)$('vp').value=v;if($('vp').selectedIndex<0)$('vp').selectedIndex=0;
-    const p=S.products.find(x=>x.id===$('vp').value);if(p){const n=num('vn'),v=$('vpl').value==='v',t=financed(p,n,v),cu=Math.max(0,t-num('va'))/n,nm=$('vc').value.trim(),k=(nm+'|'+($('vt').value||'')).toLowerCase(),prev=S.sales.filter(x=>(x.client+'|'+(x.phone||'')).toLowerCase()===k).length,pm=S.config.promoMin||5;
-      $('vinfo').innerHTML=`Total ${money(t)} · ${n} cuotas de ${money(cu)} · ${v?'1ª cuota el mes que viene':'hoy cobrás la 1ª: <b>'+money(cu)+'</b>'}<br>Tu costo: ${money(p.cost)}`+(nm?(prev>=pm?`<br><b class="pos">⭐ Cliente frecuente (${prev} compras): le corresponde el plan Vencida</b>`:`<br>Compras anteriores de este cliente: ${prev}`):'')}}
+    const p=S.products.find(x=>x.id===$('vp').value);if(p){const n=num('vn'),v=$('vpl').value==='v',t=financed(p,n,v),alt=financed(p,n,!v),cu=Math.max(0,t-num('va'))/n,nm=$('vc').value.trim(),k=(nm+'|'+($('vt').value||'')).toLowerCase(),prev=S.sales.filter(x=>(x.client+'|'+(x.phone||'')).toLowerCase()===k).length,pm=S.config.promoMin||5;
+      $('vinfo').innerHTML=`Total ${money(t)} · ${n} cuotas de ${money(cu)} · ${v?'1ª cuota el mes que viene':'hoy cobrás la 1ª: <b>'+money(cu)+'</b>'}<br>${v?'Si pagara la 1ª hoy (Adelantada)':'Si dejara la 1ª para el mes que viene (Vencida)'}: ${n} de ${money(alt/n)} · Total ${money(alt)} (${alt>=t?'+':'−'}${money(Math.abs(alt-t))})<br>Tu costo: ${money(p.cost)}`+(nm?(prev>=pm?`<br><b class="pos">⭐ Cliente frecuente (${prev} compras): le corresponde el plan Vencida</b>`:`<br>Compras anteriores de este cliente: ${prev}`):'')}}
   if($('slist')){const fl=$('cf')?$('cf').value:'todos',by={};
     S.sales.forEach(x=>{const k=(x.client+'|'+(x.phone||'')).toLowerCase();(by[k]=by[k]||{client:x.client,phone:x.phone,sales:[]}).sales.push(x)});
     let cl=Object.values(by).map(c=>({...c,saldo:c.sales.reduce((a,x)=>a+x.total-cobrado(x),0),late:c.sales.some(late),dni:dniOf(c)}));
@@ -452,12 +532,11 @@ function refresh(){
   document.querySelectorAll('[data-ok]').forEach(b=>b.onclick=()=>{const r=S.receipts.find(x=>x.id===b.dataset.ok),x=r&&S.sales.find(v=>v.tok===r.sid);if(x&&x.paid<x.n)put('sales',{...x,paid:x.paid+1});del('receipts',b.dataset.ok)});
   document.querySelectorAll('[data-no]').forEach(b=>b.onclick=()=>del('receipts',b.dataset.no));
   document.querySelectorAll('[data-lk]').forEach(b=>b.onclick=()=>{const t=payLink(b.dataset.lk);try{navigator.clipboard.writeText(t)}catch(e){}b.textContent='¡Copiado!'});
-  document.querySelectorAll('[data-ph]').forEach(i=>i.onchange=async()=>{const p=S.products.find(x=>x.id===i.dataset.ph);if(p&&i.files[0])put('products',{...p,photo:await shrink(i.files[0])})});
+  document.querySelectorAll('[data-ph]').forEach(i=>i.onchange=async()=>{const p=S.products.find(x=>x.id===i.dataset.ph);let f=i.files[0];if(p&&f){f=await cropImage(f);if(!f){i.value='';return}try{put('products',{...p,photo:await shrink(f)})}catch(e){alert('No pude leer esa foto. Probá con otra.')}}});
   document.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>del('products',b.dataset.d));
   document.querySelectorAll('[data-shp]').forEach(b=>b.onclick=()=>{const p=S.products.find(x=>x.id===b.dataset.shp);if(p)shareCuotas(p,'sh')});
   document.querySelectorAll('[data-ls]').forEach(b=>b.onclick=()=>leadToSale(b.dataset.ls));
   document.querySelectorAll('[data-ed]').forEach(b=>b.onclick=()=>editProd(b.dataset.ed));
-  document.querySelectorAll('[data-zoom]').forEach(i=>i.onclick=()=>iaModal('',`<img src="${i.src}" alt="" style="width:100%;border-radius:12px">`));
   document.querySelectorAll('[data-ds]').forEach(b=>b.onclick=()=>del('sales',b.dataset.ds));
   document.querySelectorAll('[data-de]').forEach(b=>b.onclick=()=>del('expenses',b.dataset.de));
   document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{const s=S.sales.find(x=>x.id===b.dataset.pay);put('sales',{...s,paid:s.paid+1})});
@@ -552,7 +631,7 @@ function editProd(id){const p=S.products.find(x=>x.id===id);if(!p)return;let fot
   const byCost=()=>{ult='m';$('ep').value=Math.round(num('ec')*(1+num('em')/100))};
   $('ec').oninput=byCost;$('em').oninput=byCost;
   $('ep').oninput=()=>{ult='p';const c=num('ec');if(c>0)$('em').value=+((num('ep')/c-1)*100).toFixed(2)};
-  $('eff').onchange=async()=>{file=$('eff').files[0];if(!file)return;try{foto=await shrink(file);show();$('eprev').innerHTML=''}catch(e){$('emsg').textContent='No pude leer esa foto.'}};
+  $('eff').onchange=async()=>{file=$('eff').files[0];if(!file)return;{const cc=await cropImage(file);if(!cc){$('eff').value='';file=null;return}file=cc}try{foto=await shrink(file);show();$('eprev').innerHTML=''}catch(e){$('emsg').textContent='No pude leer esa foto.'}};
   $('emej').onclick=async()=>{const bt=$('emej'),pv=$('eprev');if(!foto){$('emsg').textContent='Primero cargá una foto.';return}
     if(!(fb&&fb.fn)){$('emsg').textContent='La IA todavía no está configurada.';return}
     bt.disabled=true;pv.innerHTML='';$('emsg').textContent='✨ Armando la foto profesional… puede tardar hasta 1 minuto.';
@@ -642,7 +721,8 @@ function iaHooks(){
   const cb=$('cbanner');if(cb&&!cb.querySelector('[data-iah]')){const c=iaBtn('✨ Cobranzas de hoy','data-iah',iaHoy);c.classList.add('g');c.style.marginBottom='6px';cb.appendChild(c)}
   const g=$('gres');if(g&&!g.querySelector('[data-ian]')){const c=iaBtn('✨ Analizar con IA','data-ian',iaAnalisis);c.classList.add('g');g.appendChild(c)}
 }
-let _rs=0;const _refresh=refresh;refresh=function(){_refresh();if(fb&&fb.fn)iaHooks();
+let _rs=0,_pp=0;const _refresh=refresh;refresh=function(){_refresh();if(fb&&fb.fn)iaHooks();
+  if(!_pp&&fb&&fb.auth&&fb.auth.currentUser&&S.sales.length&&S.products.length){_pp=1;S.sales.forEach(pubPay)}
   if(!_rs&&fb&&fb.auth.currentUser&&S.sales.length&&!$('iam')){_rs=1;try{const t=iso(new Date());if(localStorage.getItem('remd')!==t&&remItems().length){localStorage.setItem('remd',t);remModal()}}catch(e){}}};
 
 /* ==================== FIN INTELIGENCIA ARTIFICIAL ==================== */
