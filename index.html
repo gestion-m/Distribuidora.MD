@@ -121,7 +121,7 @@ async function gXls(){const F=gFilter(),T=gTot(F);
   XLSX.writeFile(wb,'ganancias_'+ymd(new Date())+'.xlsx')}
 const IA_URL='https://ia-ventas.joha461.workers.dev'; // ← acá va la dirección de tu servidor de IA (Cloudflare), ej: 'https://ia-ventas.algo.workers.dev'
 let tab='cuotas', fb=null;
-const S={config:{recargo:.03,colchon:.07,anticipo:.4},products:[],sales:[],expenses:[],leads:[],receipts:[]};
+const S={config:{recargo:.03,colchon:.07,anticipo:.4},products:[],sales:[],expenses:[],leads:[],receipts:[],vipReq:[],vipOk:[]};
 const $=id=>document.getElementById(id);
 const money=n=>(Number(n)||0).toLocaleString('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0});
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -131,14 +131,16 @@ const num=id=>Number($(id).value)||0;
 /* ---------- datos: Firebase (en vivo) o locales ---------- */
 try{const l=JSON.parse(localStorage.getItem('cv')||'null');if(l)Object.assign(S,l)}catch(e){}
 function localSave(){try{localStorage.setItem('cv',JSON.stringify(S))}catch(e){}}
-const pubDoc=p=>({n:p.name,k:Math.round(contado(p)/100)*100,f:Object.fromEntries(NS.map(n=>[n,financed(p,n)])),fv:Object.fromEntries(NS.map(n=>[n,financed(p,n,true)])),ph:p.photo||'',ds:p.desc||'',d:p.stock>0,c:catOf(p)});
-async function pub(list){if(!fb)return;const{doc,setDoc}=fb.fs;try{await setDoc(doc(fb.db,'catalog','_cfg'),{w:S.config.wa||'',a:S.config.anticipo,pm:S.config.promoMin||5,alias:S.config.alias||'',titular:S.config.titular||''});for(const p of list)await setDoc(doc(fb.db,'catalog',p.id),pubDoc(p))}catch(e){$('sync').textContent='Error al publicar catálogo'}}
+const vipDoc=p=>({n:p.name,fv:Object.fromEntries(NS.map(n=>[n,financed(p,n,true)]))});
+const pubDoc=p=>({n:p.name,k:Math.round(contado(p)/100)*100,f:Object.fromEntries(NS.map(n=>[n,financed(p,n)])),ph:p.photo||'',ds:p.desc||'',d:p.stock>0,c:catOf(p)});
+async function pub(list){if(!fb)return;const{doc,setDoc}=fb.fs;try{await setDoc(doc(fb.db,'catalog','_cfg'),{w:S.config.wa||'',a:S.config.anticipo,pm:S.config.promoMin||5,alias:S.config.alias||'',titular:S.config.titular||''});for(const p of list){await setDoc(doc(fb.db,'catalog',p.id),pubDoc(p));try{await setDoc(doc(fb.db,'vip',p.id),vipDoc(p))}catch(e){}}}catch(e){$('sync').textContent='Error al publicar catálogo'}}
 const _th={};
 async function thumb(u,m=640,q=.7){if(!u)return '';const k=u.length+':'+u.slice(-24);if(_th[k])return _th[k];try{const i=await new Promise((ok,no)=>{const im=new Image();im.onload=()=>ok(im);im.onerror=no;im.src=u}),z=Math.min(1,m/Math.max(i.width,i.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(i.width*z));c.height=Math.max(1,Math.round(i.height*z));c.getContext('2d').drawImage(i,0,0,c.width,c.height);return _th[k]=c.toDataURL('image/jpeg',q)}catch(e){return ''}}
 const maskDni=d=>{const x=String(d||'').replace(/\D/g,'');return x?'••.•••.'+x.slice(-3):''};
 async function pubPay(s){if(!fb||!s.tok)return;try{const pr=S.products.find(x=>x.id===s.pid),ph=pr?await thumb(pr.photo):'',sched=Array.from({length:s.n},(_,k)=>iso(dueN(s,k)));
   await fb.fs.setDoc(fb.fs.doc(fb.db,'pay',s.tok),{n:s.client.split(' ')[0],prod:s.pname,cuotas:s.n,paid:s.paid,cuota:Math.round(cuotaOf(s)),total:s.total,saldo:Math.round(s.total-cobrado(s)),next:s.paid<s.n?iso(nextDue(s)):'',pun:punit(),fq:FQ[s.freq||'m']+(s.freq&&s.dp!=null?' · '+dpText(s.freq,s.dp).toLowerCase():''),
     ph,date:s.date||'',adel:!!s.adel,ant:s.anticipo||0,nm:s.client||'',dni:maskDni(s.dni),addr:s.addr||'',sched})}catch(e){}}
+async function delVip(c,id){S[c]=S[c].filter(x=>x.id!==id);if(fb){try{await fb.fs.deleteDoc(fb.fs.doc(fb.db,c,id))}catch(e){$('sync').textContent='Error al guardar'}}refresh()}
 async function put(col,obj){
   if(col==='config'){S.config=obj}else{const i=S[col].findIndex(x=>x.id===obj.id);i<0?S[col].push(obj):S[col][i]=obj}
   if(fb){try{await fb.fs.setDoc(fb.fs.doc(fb.db,col,col==='config'?'main':obj.id),obj)}catch(e){$('sync').textContent='Error al guardar'}}else localSave();
@@ -343,7 +345,7 @@ function build(){nav();const a=$('app');
     <div class="row"><div><label>Detalle</label><input id="gd"></div><div><label>Monto</label><input id="gm" type="number" inputmode="numeric"></div></div>
     <button class="btn" id="gadd">Agregar gasto</button></div>
     <div class="card"><h2>GASTOS DEL PERÍODO</h2><div id="glist"></div></div>`;
-  if(tab==='ped')a.innerHTML=`<div class="card"><h2>PEDIDOS DE CLIENTES</h2><div id="llist"></div><p class="note">Solo llegan pedidos con el email verificado. El DNI lo verificás vos en persona: marcalo cuando lo hayas chequeado.</p></div>`;
+  if(tab==='ped')a.innerHTML=`<div class="card"><h2>PEDIDOS DE CLIENTES</h2><div id="llist"></div><p class="note">Solo llegan pedidos con el email verificado. El DNI lo verificás vos en persona: marcalo cuando lo hayas chequeado.</p></div><div class="card"><h2>⭐ CLIENTES FRECUENTES</h2><div id="vlist"></div><p class="note">Acá llegan los que se registran con email y contraseña. Mirá cuántas compras tienen registradas y, si corresponde, aprobalos: desde ese momento ven el plan de pagar la 1ª cuota el mes que viene.</p></div>`;
   if(tab==='cat')a.innerHTML=`<div class="card"><h2>LINK PARA TUS CLIENTES</h2>
     <label>Tu WhatsApp (con código de país, sin + ni espacios)</label><input id="kw" placeholder="5491122334455" value="${esc(S.config.wa||'')}">
     <button class="btn g" id="kgen">Guardar y publicar catálogo</button>
@@ -354,7 +356,7 @@ function build(){nav();const a=$('app');
 }
 function catView(){
   document.title='Catálogo';$('nav').style.display='none';document.querySelector('.top h1').textContent='CATÁLOGO';$('sync').textContent='';
-  $('app').innerHTML=`<div class="card"><input id="bq" type="search" placeholder="🔍 ¿Qué estás buscando?" style="margin-bottom:10px"><div id="cvm" class="chips"></div><div id="cchips" class="chips"></div><input id="cap" type="hidden" value="0"><p style="margin:0"><b>Pagás la 1ª cuota hoy</b> y las demás semanal, quincenal o mensual, siempre del mismo valor.</p><p class="note">Los precios en cuotas incluyen el recargo por financiación.</p></div><div id="cl"><p class="note">Cargando…</p></div>
+  $('app').innerHTML=`<div class="card"><input id="bq" type="search" placeholder="🔍 ¿Qué estás buscando?" style="margin-bottom:10px"><div id="cvm" class="chips"></div><div id="cchips" class="chips"></div><input id="cap" type="hidden" value="0"><p style="margin:0"><b>Pagás la 1ª cuota hoy</b> y las demás semanal, quincenal o mensual, siempre del mismo valor.</p><p class="note">Los precios en cuotas incluyen el recargo por financiación.</p></div><div id="vbox"></div><div id="cl"><p class="note">Cargando…</p></div>
   <div class="card" id="lead" style="display:none"><h2>QUIERO COMPRAR</h2>
     <label>Producto</label><select id="lp2"></select>
     <label>Cuotas</label><select id="ln">${NS.map(c=>`<option ${c===6?'selected':''}>${c}</option>`).join('')}</select>
@@ -369,13 +371,13 @@ function catView(){
     <p class="note">Verificamos tu email con un link. Tus datos se usan solo para esta compra.</p></div>`;
   let items=[],cfg={a:.4,w:''},first=true;
   const sel={};
-  const open={};let cf='',vm='g';try{vm=localStorage.getItem('cvm')==='l'?'l':'g'}catch(e){}
+  const open={};let cf='',vm='g',vip=false,vipFv={};try{vm=localStorage.getItem('cvm')==='l'?'l':'g'}catch(e){}
   const pick=s=>{const i=s.lastIndexOf('|'),nm=s.slice(0,i),n=s.slice(i+1);
       const lp=$('lp2');if([...lp.options].every(x=>x.value!==nm)){const o=document.createElement('option');o.textContent=nm;lp.appendChild(o)}lp.value=nm;$('ln').value=n;
       const ld=$('lead');ld.style.display='';ld.scrollIntoView({behavior:'smooth',block:'start'})};
   const tile=it=>`<button class="pt" type="button" data-pd="${esc(it.n)}"><div class="im">${it.ph?`<img src="${it.ph}" alt="" loading="lazy">`:'📦'}</div><b>${esc(it.n)}</b><span>${money(it.k)}</span>${it.d?'':'<small>A pedido</small>'}</button>`;
   const rowsHtml=it=>CATN.map(n=>{const f=(it.f||{})[n]||0,c=f/n;
-        return `<div class="item"><div><b>${n} cuotas de ${money(c)}</b><small>Hoy pagás la 1ª · total ${money(f)}</small>${(it.fv||{})[n]?`<small>⭐ Cliente frecuente (1ª el mes que viene): ${n} de ${money(it.fv[n]/n)} · total ${money(it.fv[n])}</small>`:''}</div><button class="btn s g" data-el="${esc(it.n)}|${n}" type="button">Elegir</button></div>`}).join('');
+        return `<div class="item"><div><b>${n} cuotas de ${money(c)}</b><small>Hoy pagás la 1ª: ${money(c)}</small><small>Mes siguiente: ${money(c)}${n>2?' (y así las '+(n-1)+' restantes)':''}</small>${vip&&(vipFv[it.n]||{})[n]?`<small>⭐ Cliente frecuente: pagás la 1ª el mes que viene · ${n} cuotas de ${money(vipFv[it.n][n]/n)}</small>`:''}</div><button class="btn s g" data-el="${esc(it.n)}|${n}" type="button">Elegir</button></div>`}).join('');
   const showDet=it=>{const old=$('pm');if(old)old.remove();const m=document.createElement('div');m.id='pm';m.className='pms';
     m.innerHTML=`<div class="pmb"><div style="display:flex;justify-content:flex-end"><button class="btn s" id="pmx" type="button" style="margin:0">✕ Cerrar</button></div>${it.ph?`<img src="${it.ph}" data-pz="1" alt="" style="width:100%;max-height:280px;object-fit:contain;background:var(--card);border-radius:12px;margin-top:8px;cursor:zoom-in"><p class="note" style="margin:2px 0 8px;text-align:center">🔍 Tocá la foto para verla grande</p>`:''}<h2>${esc(it.n)} <span class="tag">${it.d?'En stock':'A pedido'}</span></h2>${it.ds?`<p style="margin:6px 0 8px;color:var(--muted)">${esc(it.ds)}</p>`:''}<div class="kpi" style="margin:8px 0"><span>Precio de contado</span><b>${money(it.k)}</b></div><div class="card" style="padding:4px 14px;margin-bottom:8px">${rowsHtml(it)}</div><p class="note" style="margin:0 0 8px">Tocá "Elegir" en la cantidad de cuotas que te sirva y completá tus datos.</p><button class="btn" data-shm="1" type="button" style="width:100%;margin:0">📤 Compartir</button></div>`;
     document.body.appendChild(m);
@@ -392,13 +394,44 @@ function catView(){
       return `<div class="card"><div data-o="${esc(it.n)}" style="cursor:pointer">${it.ph?`<img src="${it.ph}" data-pz="${esc(it.n)}" alt="" style="width:100%;max-height:260px;object-fit:contain;background:var(--paper);border-radius:12px;cursor:zoom-in"><p class="note" style="margin:2px 0 8px;text-align:center">🔍 Tocá la foto para verla grande</p>`:''}<h2>${esc(it.n)} <span class="tag">${it.d?'En stock':'A pedido'}</span></h2>${it.ds?`<p style="margin:0 0 8px;color:var(--muted)">${esc(it.ds)}</p>`:''}<div class="kpi" style="margin:8px 0 6px"><span>Precio de contado</span><b>${money(it.k)}</b></div><div class="row"><button class="btn ${o?'':'g'}" style="margin:0 0 6px">${o?'▲ Ocultar cuotas':'Ver cuotas ▼'}</button><button class="btn" data-sh="${esc(it.n)}" type="button" style="margin:0 0 6px">📤 Compartir</button></div></div>${rows}${o?'<p class="note">Tocá "Elegir" en la cantidad de cuotas que te sirva y completá tus datos.</p>':''}</div>`}).join('');
     $('cvm').innerHTML=`<button class="${vm==='g'?'on':''}" data-vm="g">▦ Catálogo</button><button class="${vm==='l'?'on':''}" data-vm="l">☰ Lista</button>`;
     $('cvm').querySelectorAll('[data-vm]').forEach(b=>b.onclick=()=>{vm=b.dataset.vm;try{localStorage.setItem('cvm',vm)}catch(e){}d()});
-    $('cl').innerHTML=banner+(list||'<p class="note">'+(q?'No encontramos ese producto. Escribinos por WhatsApp y te ayudamos.':'Todavía no hay productos.')+'</p>');
+    $('cl').innerHTML=(list||'<p class="note">'+(q?'No encontramos ese producto. Escribinos por WhatsApp y te ayudamos.':'Todavía no hay productos.')+'</p>');
     $('cl').querySelectorAll('[data-pd]').forEach(b=>b.onclick=()=>{const it=items.find(x=>x.n===b.dataset.pd);if(it)showDet(it)});
     $('cl').querySelectorAll('[data-o]').forEach(e=>e.onclick=()=>{open[e.dataset.o]=!open[e.dataset.o];d()});
     $('cl').querySelectorAll('[data-sh]').forEach(b=>b.onclick=e=>{e.stopPropagation();const it=items.find(x=>x.n===b.dataset.sh);if(it)shareCat(it)});
     $('cl').querySelectorAll('[data-pz]').forEach(im=>im.onclick=e=>{e.stopPropagation();const it=items.find(x=>x.n===im.dataset.pz);if(!it)return;lightbox(it.ph,it.n,()=>shareCat(it))});
     $('cl').querySelectorAll('[data-el]').forEach(b=>b.onclick=()=>pick(b.dataset.el))};
   $('cap').oninput=d;$('bq').oninput=d;const lf=$('lfr');lf.onchange=()=>{$('ldp').innerHTML=dpOpts(lf.value);$('ldl').textContent=lf.value==='w'?'Día de la semana':'Período de pago'};lf.onchange();leadInit();
+
+  /* ===== Clientes frecuentes: cuenta con email y contraseña, aprobada por el dueño ===== */
+  let vu=null,vs='',vsub=[];
+  const vsay=t=>{const e=$('vm');if(e)e.textContent=t||''},vg=id=>$(id)?$(id).value.trim():'';
+  const vreq=async(u,n,t)=>{await fb.fs.setDoc(fb.fs.doc(fb.db,'vipReq',u.uid),{email:u.email,name:n,phone:e164g(t),at:Date.now()});vs='pend';vdraw()};
+  const vdraw=()=>{const b=$('vbox');if(!b)return;
+    const salir='<button class="btn s x" id="vout" type="button" style="margin-top:8px">Salir</button>',head='<h2>⭐ CLIENTE FRECUENTE</h2>';
+    if(vu&&vs==='load')b.innerHTML='';
+    else if(vu&&vs==='ok')b.innerHTML=`<div class="card" style="border:2px solid var(--green)">${head}<p style="margin:0">Ya podés ver tus precios: <b>pagás la 1ª cuota el mes que viene</b>.</p>${salir}</div>`;
+    else if(vu&&vs==='pend')b.innerHTML=`<div class="card">${head}<p style="margin:0">Recibimos tu solicitud. Cuando la aprobemos vas a ver acá tus precios de cliente frecuente.</p>${salir}</div>`;
+    else if(vu)b.innerHTML=`<div class="card">${head}<p class="note" style="margin:0 0 6px">Completá tus datos para pedir el acceso. Lo aprobamos nosotros.</p><label>Nombre y apellido</label><input id="vn" autocomplete="name"><label>Celular con código de área</label><input id="vt" type="tel" placeholder="11 2233 4455"><button class="btn g" id="vrq" type="button">Pedir acceso</button><p class="note neg" id="vm"></p>${salir}</div>`;
+    else b.innerHTML=`<details class="acc card"><summary><h2>⭐ SOY CLIENTE FRECUENTE</h2></summary><label>Email</label><input id="ve" type="email" autocomplete="username"><label>Contraseña (mínimo 6 caracteres)</label><input id="vp" type="password" autocomplete="current-password"><div class="row"><button class="btn g" id="vin" type="button">Entrar</button><button class="btn" id="vrs" type="button">Olvidé mi contraseña</button></div><details class="sub"><summary>¿Primera vez? Crear cuenta</summary><p class="note" style="margin:0 0 4px">Creá tu cuenta con el email y la contraseña de arriba y pedinos el acceso. Lo aprobamos nosotros cuando ya hayas comprado varias veces.</p><label>Nombre y apellido</label><input id="vn2" autocomplete="name"><label>Celular con código de área</label><input id="vt2" type="tel" placeholder="11 2233 4455"><button class="btn g" id="vnw" type="button">Crear cuenta y pedir acceso</button></details><p class="note neg" id="vm"></p></details>`;
+    if($('vout'))$('vout').onclick=()=>fb.au.signOut(fb.auth);
+    if($('vin'))$('vin').onclick=async()=>{vsay('');try{await fb.au.signInWithEmailAndPassword(fb.auth,vg('ve'),$('vp').value)}catch(e){vsay('Email o contraseña incorrectos')}};
+    if($('vrs'))$('vrs').onclick=async()=>{if(!vg('ve'))return vsay('Escribí tu email arriba');try{await fb.au.sendPasswordResetEmail(fb.auth,vg('ve'));vsay('Te mandamos un email para cambiar la contraseña')}catch(e){vsay('No se pudo enviar el email')}};
+    if($('vnw'))$('vnw').onclick=async()=>{const n=vg('vn2'),t=vg('vt2'),e=vg('ve'),p=$('vp').value;
+      if(!/^\S+@\S+\.\S+$/.test(e))return vsay('Escribí un email válido arriba');if(p.length<6)return vsay('La contraseña debe tener al menos 6 caracteres');
+      if(n.length<3)return vsay('Completá tu nombre y apellido');if(normAR(t).length!==10)return vsay('Poné tu celular con código de área, por ejemplo 11 2233 4455');
+      try{const c=await fb.au.createUserWithEmailAndPassword(fb.auth,e,p);try{await vreq(c.user,n,t)}catch(x){vs='form';vdraw();vsay('Cuenta creada, pero no se pudo enviar la solicitud. Probá de nuevo.')}}
+      catch(x){vsay(x.code==='auth/email-already-in-use'?'Ese email ya tiene cuenta: tocá "Entrar"':'No se pudo crear la cuenta')}};
+    if($('vrq'))$('vrq').onclick=async()=>{const n=vg('vn'),t=vg('vt');if(n.length<3)return vsay('Completá tu nombre y apellido');if(normAR(t).length!==10)return vsay('Poné tu celular con código de área, por ejemplo 11 2233 4455');
+      try{await vreq(vu,n,t)}catch(x){vsay('No se pudo enviar. Probá de nuevo.')}}};
+  fb.au.onAuthStateChanged(fb.auth,u=>{vsub.forEach(f=>f());vsub=[];vu=u;vip=false;vipFv={};
+    if(!u){vs='';vdraw();d();return}
+    vs='load';vdraw();d();
+    let reqS=false,okS=false;const F=fb.fs;
+    vsub.push(F.onSnapshot(F.doc(fb.db,'vipOk',u.uid),x=>{
+      if(x.exists()){if(!okS){okS=true;vsub.push(F.onSnapshot(F.collection(fb.db,'vip'),sn=>{vipFv={};sn.docs.forEach(y=>{const o=y.data();vipFv[o.n]=o.fv});vip=true;vs='ok';vdraw();d()},()=>{vip=false;vs='pend';vdraw();d()}))}}
+      else{okS=false;vip=false;vipFv={};vs=reqS?'pend':'form';vdraw();d()}},()=>{vs='form';vdraw()}));
+    vsub.push(F.onSnapshot(F.doc(fb.db,'vipReq',u.uid),x=>{reqS=x.exists();if(vs!=='ok'){vs=reqS?'pend':'form';vdraw()}},()=>{}))});
+  vdraw();
   fb.fs.onSnapshot(fb.fs.collection(fb.db,'catalog'),sn=>{items=[];sn.docs.forEach(x=>x.id==='_cfg'?cfg=x.data():items.push(x.data()));
     first=false;d();fillProd(items);waFab(cfg.w)},()=>{$('cl').innerHTML='<p class="note">No se pudo cargar el catálogo.</p>'});
 }
@@ -548,7 +581,15 @@ function refresh(){
     <div class="card"><h2>CUOTAS MÁS ELEGIDAS</h2>`+(CU.map(([n,c])=>`<div class="item"><div><b>${n} cuotas</b></div><div>${c} venta(s)</div></div>`).join('')||'<p class="note">Sin datos.</p>')+`</div>`}
   if($('glist'))$('glist').innerHTML=gFilter().expenses.map(e=>`<div class="item"><div>${esc(e.desc)}<small>${e.date}</small></div><div>${money(e.amount)} <button class="btn s x" data-de="${e.id}">✕</button></div></div>`).join('');
   if($('vpend')){const P=S.leads.filter(l=>!l.sold).sort((a,b)=>a.createdAt-b.createdAt);$('vpend').innerHTML=P.length?`<div class="card" style="border:2px solid var(--gold)"><h2>PEDIDOS PENDIENTES (${P.length})</h2><p class="note" style="margin:0 0 4px">Tocá "Cargar venta" y se completa todo el formulario.</p>`+P.map(l=>`<div class="item"><div><b>${esc(l.name)}</b> <span class="tag ${l.dniOk?'ok':''}">${l.dniOk?'DNI ok':'DNI sin chequear'}</span><small>${esc(l.product)} · ${esc(l.cuotas)} cuotas</small></div><button class="btn s g" data-ls="${l.id}">Cargar venta</button></div>`).join('')+`</div>`:''}
-  if($('llist'))$('llist').innerHTML=[...S.leads].sort((a,b)=>(!!a.sold-!!b.sold)||b.createdAt-a.createdAt).map(l=>`<div class="item" style="align-items:flex-start"><div><b>${esc(l.name)}</b> <span class="tag ${l.dniOk?'ok':''}">${l.dniOk?'DNI chequeado':'DNI sin chequear'}</span><small>DNI ${esc(l.dni)} · ${esc(l.addr)}${l.city?', '+esc(l.city):''}${l.partido?' · Partido '+esc(l.partido):''}</small><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([l.addr,l.city,l.partido,'Argentina'].filter(Boolean).join(', '))}" target="_blank" rel="noopener" style="color:var(--green);font-weight:700;display:inline-block;margin:2px 0">📍 Ver dirección en Google Maps</a><small>${esc(l.product)} en ${esc(l.cuotas)} cuotas · quiere pagar ${(FQ[l.freq]||'Mensual').toLowerCase()} ${esc(dpText(l.freq||'m',l.dp)).toLowerCase()} · ${new Date(l.createdAt).toLocaleDateString('es-AR')}</small><small>📱 ${esc(e164g(l.phone))} · ✉ ${esc(l.email)} ✔</small><a href="https://wa.me/${esc(e164g(l.phone).slice(1))}" style="color:var(--green);font-weight:700">Escribir por WhatsApp</a></div><div style="display:flex;flex-direction:column;gap:4px">${l.sold?`<span class="tag ok" style="text-align:center">✔ Vendido</span><button class="btn s" data-lu="${l.id}">Volver a pendiente</button>`:`<button class="btn s g" data-ls="${l.id}">→ Venta</button>`}<button class="btn s" data-dni="${l.id}">${l.dniOk?'Quitar check':'DNI ok'}</button><button class="btn s x" data-dl="${l.id}">Borrar</button></div></div>`).join('')||'<p class="note">Todavía no hay pedidos.</p>';
+  const isVip=e=>S.vipOk.some(v=>String(v.email||'').toLowerCase()===String(e||'').toLowerCase());
+  const l10=t=>String(t||'').replace(/\D/g,'').slice(-10),nBuy=r=>S.sales.filter(x=>(r.phone&&x.phone&&l10(x.phone)===l10(r.phone))||String(x.client||'').trim().toLowerCase()===String(r.name||'').trim().toLowerCase()).length;
+  if($('vlist')){const okI=new Set(S.vipOk.map(v=>v.id)),pm=S.config.promoMin||5;
+    $('vlist').innerHTML=[...S.vipReq].sort((a,b)=>(okI.has(a.id)-okI.has(b.id))||(b.at-a.at)).map(r=>{const n=nBuy(r),ok=okI.has(r.id);
+      return `<div class="item" style="align-items:flex-start"><div><b>${esc(r.name)}</b> <span class="tag ${ok?'ok':''}">${ok?'✔ Aprobado':'Pendiente'}</span><small>✉ ${esc(r.email)} · 📱 ${esc(r.phone)}</small><small>Compras registradas: <b class="${n>=pm?'pos':''}">${n}</b> (mínimo ${pm})</small></div><div style="display:flex;flex-direction:column;gap:4px">${ok?`<button class="btn s x" data-vx="${r.id}">Quitar acceso</button>`:`<button class="btn s g" data-va="${r.id}">Aprobar</button><button class="btn s x" data-vd="${r.id}">Borrar</button>`}</div></div>`}).join('')||'<p class="note">Todavía nadie pidió acceso.</p>';
+    document.querySelectorAll('[data-va]').forEach(b=>b.onclick=()=>{const r=S.vipReq.find(x=>x.id===b.dataset.va);if(r)put('vipOk',{id:r.id,email:r.email,name:r.name,at:Date.now()})});
+    document.querySelectorAll('[data-vx]').forEach(b=>b.onclick=()=>{if(confirm('¿Quitarle el acceso a este cliente?'))delVip('vipOk',b.dataset.vx)});
+    document.querySelectorAll('[data-vd]').forEach(b=>b.onclick=()=>{if(confirm('¿Borrar esta solicitud?'))delVip('vipReq',b.dataset.vd)})}
+  if($('llist'))$('llist').innerHTML=[...S.leads].sort((a,b)=>(!!a.sold-!!b.sold)||b.createdAt-a.createdAt).map(l=>`<div class="item" style="align-items:flex-start"><div><b>${esc(l.name)}</b> ${isVip(l.email)?'<span class="tag ok">⭐ Frecuente</span> ':''}<span class="tag ${l.dniOk?'ok':''}">${l.dniOk?'DNI chequeado':'DNI sin chequear'}</span><small>DNI ${esc(l.dni)} · ${esc(l.addr)}${l.city?', '+esc(l.city):''}${l.partido?' · Partido '+esc(l.partido):''}</small><a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([l.addr,l.city,l.partido,'Argentina'].filter(Boolean).join(', '))}" target="_blank" rel="noopener" style="color:var(--green);font-weight:700;display:inline-block;margin:2px 0">📍 Ver dirección en Google Maps</a><small>${esc(l.product)} en ${esc(l.cuotas)} cuotas · quiere pagar ${(FQ[l.freq]||'Mensual').toLowerCase()} ${esc(dpText(l.freq||'m',l.dp)).toLowerCase()} · ${new Date(l.createdAt).toLocaleDateString('es-AR')}</small><small>📱 ${esc(e164g(l.phone))} · ✉ ${esc(l.email)} ✔</small><a href="https://wa.me/${esc(e164g(l.phone).slice(1))}" style="color:var(--green);font-weight:700">Escribir por WhatsApp</a></div><div style="display:flex;flex-direction:column;gap:4px">${l.sold?`<span class="tag ok" style="text-align:center">✔ Vendido</span><button class="btn s" data-lu="${l.id}">Volver a pendiente</button>`:`<button class="btn s g" data-ls="${l.id}">→ Venta</button>`}<button class="btn s" data-dni="${l.id}">${l.dniOk?'Quitar check':'DNI ok'}</button><button class="btn s x" data-dl="${l.id}">Borrar</button></div></div>`).join('')||'<p class="note">Todavía no hay pedidos.</p>';
   document.querySelectorAll('[data-dni]').forEach(b=>b.onclick=()=>{const l=S.leads.find(x=>x.id===b.dataset.dni);put('leads',{...l,dniOk:!l.dniOk})});
   document.querySelectorAll('[data-lu]').forEach(b=>b.onclick=()=>{const l=S.leads.find(x=>x.id===b.dataset.lu);put('leads',{...l,sold:false})});
   document.querySelectorAll('[data-dl]').forEach(b=>b.onclick=()=>del('leads',b.dataset.dl));
@@ -765,6 +806,7 @@ let _rs=0,_pp=0;const _refresh=refresh;refresh=function(){_refresh();if(fb&&fb.f
     $('sync').textContent='● En vivo · '+u.email;$('nav').style.display='';
     if(!subbed){subbed=true;
       ['products','sales','expenses','leads','receipts'].forEach(c=>fb.fs.onSnapshot(fb.fs.collection(fb.db,c),sn=>{S[c]=sn.docs.map(x=>({...x.data(),id:x.id}));refresh()},()=>{$('sync').textContent='Sin permiso o sin conexión'}));
+      ['vipReq','vipOk'].forEach(c=>fb.fs.onSnapshot(fb.fs.collection(fb.db,c),sn=>{S[c]=sn.docs.map(x=>({...x.data(),id:x.id}));refresh()},()=>{}));
       fb.fs.onSnapshot(fb.fs.doc(fb.db,'config','main'),x=>{if(x.exists()){S.config={...S.config,...x.data()};refresh()}});}
     build();
   });
