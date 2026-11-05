@@ -70,7 +70,16 @@ details.sub>summary{cursor:pointer;font-weight:700;font-size:.85rem;padding:10px
 #crb i[data-h=ne]{right:0;top:0}#crb i[data-h=ne]::after{right:0;top:0}
 #crb i[data-h=sw]{left:0;bottom:0}#crb i[data-h=sw]::after{left:0;bottom:0}
 #crb i[data-h=se]{right:0;bottom:0}#crb i[data-h=se]::after{right:0;bottom:0}
-@media print{.top,nav,.noprint,.wa,button,body::before{display:none!important}body{background:#fff;color:#000}main{max-width:none;padding:0}.card{break-inside:avoid;border-color:#999;background:#fff}}
+.pg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.pt{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px;text-align:left;font:inherit;color:inherit;cursor:pointer;display:flex;flex-direction:column;gap:5px;min-width:0}
+.pt .im{aspect-ratio:1;width:100%;border-radius:8px;background:var(--paper);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:1.6rem}
+.pt .im img{width:100%;height:100%;object-fit:cover;display:block}
+.pt b{font-size:.72rem;line-height:1.2;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.4em}
+.pt span{font-family:'Anton',sans-serif;font-size:.95rem}
+.pt small{font-size:.62rem;color:var(--muted);margin-top:-3px}
+.pms{position:fixed;inset:0;background:#000a;z-index:40;display:flex;align-items:flex-end;justify-content:center}
+.pmb{background:var(--paper);width:100%;max-width:760px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px))}
+@media print{.pms,.top,nav,.noprint,.wa,button,body::before{display:none!important}body{background:#fff;color:#000}main{max-width:none;padding:0}.card{break-inside:avoid;border-color:#999;background:#fff}}
 </style>
 </head>
 <body>
@@ -345,7 +354,7 @@ function build(){nav();const a=$('app');
 }
 function catView(){
   document.title='Catálogo';$('nav').style.display='none';document.querySelector('.top h1').textContent='CATÁLOGO';$('sync').textContent='';
-  $('app').innerHTML=`<div class="card"><input id="bq" type="search" placeholder="🔍 ¿Qué estás buscando?" style="margin-bottom:10px"><div id="cchips" class="chips"></div><input id="cap" type="hidden" value="0"><p style="margin:0"><b>Pagás la 1ª cuota hoy</b> y las demás semanal, quincenal o mensual, siempre del mismo valor.</p><p class="note">Los precios en cuotas incluyen el recargo por financiación.</p></div><div id="cl"><p class="note">Cargando…</p></div>
+  $('app').innerHTML=`<div class="card"><input id="bq" type="search" placeholder="🔍 ¿Qué estás buscando?" style="margin-bottom:10px"><div id="cvm" class="chips"></div><div id="cchips" class="chips"></div><input id="cap" type="hidden" value="0"><p style="margin:0"><b>Pagás la 1ª cuota hoy</b> y las demás semanal, quincenal o mensual, siempre del mismo valor.</p><p class="note">Los precios en cuotas incluyen el recargo por financiación.</p></div><div id="cl"><p class="note">Cargando…</p></div>
   <div class="card" id="lead" style="display:none"><h2>QUIERO COMPRAR</h2>
     <label>Producto</label><select id="lp2"></select>
     <label>Cuotas</label><select id="ln">${NS.map(c=>`<option ${c===6?'selected':''}>${c}</option>`).join('')}</select>
@@ -360,21 +369,35 @@ function catView(){
     <p class="note">Verificamos tu email con un link. Tus datos se usan solo para esta compra.</p></div>`;
   let items=[],cfg={a:.4,w:''},first=true;
   const sel={};
-  const open={};let cf='';
+  const open={};let cf='',vm='g';try{vm=localStorage.getItem('cvm')==='l'?'l':'g'}catch(e){}
+  const pick=s=>{const i=s.lastIndexOf('|'),nm=s.slice(0,i),n=s.slice(i+1);
+      const lp=$('lp2');if([...lp.options].every(x=>x.value!==nm)){const o=document.createElement('option');o.textContent=nm;lp.appendChild(o)}lp.value=nm;$('ln').value=n;
+      const ld=$('lead');ld.style.display='';ld.scrollIntoView({behavior:'smooth',block:'start'})};
+  const tile=it=>`<button class="pt" type="button" data-pd="${esc(it.n)}"><div class="im">${it.ph?`<img src="${it.ph}" alt="" loading="lazy">`:'📦'}</div><b>${esc(it.n)}</b><span>${money(it.k)}</span>${it.d?'':'<small>A pedido</small>'}</button>`;
+  const rowsHtml=it=>CATN.map(n=>{const f=(it.f||{})[n]||0,c=f/n;
+        return `<div class="item"><div><b>${n} cuotas de ${money(c)}</b><small>Hoy pagás la 1ª · total ${money(f)}</small>${(it.fv||{})[n]?`<small>⭐ Cliente frecuente (1ª el mes que viene): ${n} de ${money(it.fv[n]/n)} · total ${money(it.fv[n])}</small>`:''}</div><button class="btn s g" data-el="${esc(it.n)}|${n}" type="button">Elegir</button></div>`}).join('');
+  const showDet=it=>{const old=$('pm');if(old)old.remove();const m=document.createElement('div');m.id='pm';m.className='pms';
+    m.innerHTML=`<div class="pmb"><div style="display:flex;justify-content:flex-end"><button class="btn s" id="pmx" type="button" style="margin:0">✕ Cerrar</button></div>${it.ph?`<img src="${it.ph}" data-pz="1" alt="" style="width:100%;max-height:280px;object-fit:contain;background:var(--card);border-radius:12px;margin-top:8px;cursor:zoom-in"><p class="note" style="margin:2px 0 8px;text-align:center">🔍 Tocá la foto para verla grande</p>`:''}<h2>${esc(it.n)} <span class="tag">${it.d?'En stock':'A pedido'}</span></h2>${it.ds?`<p style="margin:6px 0 8px;color:var(--muted)">${esc(it.ds)}</p>`:''}<div class="kpi" style="margin:8px 0"><span>Precio de contado</span><b>${money(it.k)}</b></div><div class="card" style="padding:4px 14px;margin-bottom:8px">${rowsHtml(it)}</div><p class="note" style="margin:0 0 8px">Tocá "Elegir" en la cantidad de cuotas que te sirva y completá tus datos.</p><button class="btn" data-shm="1" type="button" style="width:100%;margin:0">📤 Compartir</button></div>`;
+    document.body.appendChild(m);
+    m.onclick=e=>{if(e.target===m)m.remove()};$('pmx').onclick=()=>m.remove();
+    m.querySelectorAll('[data-el]').forEach(b=>b.onclick=()=>{m.remove();pick(b.dataset.el)});
+    m.querySelectorAll('[data-pz]').forEach(im=>im.onclick=()=>lightbox(it.ph,it.n,()=>shareCat(it)));
+    m.querySelector('[data-shm]').onclick=()=>shareCat(it)};
   const d=()=>{{const cs=[...new Set(items.map(it=>it.c||guessCat(it.n)))].sort();$('cchips').innerHTML=cs.length>1?`<button class="${cf?'':'on'}" data-cf="">Todos</button>`+cs.map(c=>`<button class="${cf===c?'on':''}" data-cf="${esc(c)}">${esc(c)}</button>`).join(''):'';$('cchips').querySelectorAll('[data-cf]').forEach(b=>b.onclick=()=>{cf=b.dataset.cf;d()})}
     const q=nz($('bq').value.trim()),pm=cfg.pm||5,
       banner=`<div class="card" style="border:2px solid var(--green)"><h2>⭐ CLIENTES FRECUENTES</h2><p style="margin:0">Si ya nos compraste <b>${pm} veces o más</b>, pagás tu <b>primera cuota recién el mes que viene</b>.</p>${cfg.w?`<a class="btn g" style="display:block;text-align:center;text-decoration:none" href="https://wa.me/${esc(cfg.w)}?text=${encodeURIComponent('Hola, soy cliente frecuente y quiero consultar por la promo')}">Consultar la promo</a>`:''}</div>`;
-    const list=items.sort((a,b)=>a.n.localeCompare(b.n)).filter(it=>(!q||nz(it.n+' '+(it.ds||'')).includes(q))&&(!cf||(it.c||guessCat(it.n))===cf)).map((it,i)=>{const o=open[it.n];
-      const rows=o?CATN.map(n=>{const f=(it.f||{})[n]||0,c=f/n;
-        return `<div class="item"><div><b>${n} cuotas de ${money(c)}</b><small>Hoy pagás la 1ª · total ${money(f)}</small>${(it.fv||{})[n]?`<small>⭐ Cliente frecuente (1ª el mes que viene): ${n} de ${money(it.fv[n]/n)} · total ${money(it.fv[n])}</small>`:''}</div><button class="btn s g" data-el="${esc(it.n)}|${n}" type="button">Elegir</button></div>`}).join(''):'';
+    const arr=items.sort((a,b)=>a.n.localeCompare(b.n)).filter(it=>(!q||nz(it.n+' '+(it.ds||'')).includes(q))&&(!cf||(it.c||guessCat(it.n))===cf));
+    const list=vm==='g'?(arr.length?'<div class="pg">'+arr.map(tile).join('')+'</div>':''):arr.map((it,i)=>{const o=open[it.n];
+      const rows=o?rowsHtml(it):'';
       return `<div class="card"><div data-o="${esc(it.n)}" style="cursor:pointer">${it.ph?`<img src="${it.ph}" data-pz="${esc(it.n)}" alt="" style="width:100%;max-height:260px;object-fit:contain;background:var(--paper);border-radius:12px;cursor:zoom-in"><p class="note" style="margin:2px 0 8px;text-align:center">🔍 Tocá la foto para verla grande</p>`:''}<h2>${esc(it.n)} <span class="tag">${it.d?'En stock':'A pedido'}</span></h2>${it.ds?`<p style="margin:0 0 8px;color:var(--muted)">${esc(it.ds)}</p>`:''}<div class="kpi" style="margin:8px 0 6px"><span>Precio de contado</span><b>${money(it.k)}</b></div><div class="row"><button class="btn ${o?'':'g'}" style="margin:0 0 6px">${o?'▲ Ocultar cuotas':'Ver cuotas ▼'}</button><button class="btn" data-sh="${esc(it.n)}" type="button" style="margin:0 0 6px">📤 Compartir</button></div></div>${rows}${o?'<p class="note">Tocá "Elegir" en la cantidad de cuotas que te sirva y completá tus datos.</p>':''}</div>`}).join('');
+    $('cvm').innerHTML=`<button class="${vm==='g'?'on':''}" data-vm="g">▦ Catálogo</button><button class="${vm==='l'?'on':''}" data-vm="l">☰ Lista</button>`;
+    $('cvm').querySelectorAll('[data-vm]').forEach(b=>b.onclick=()=>{vm=b.dataset.vm;try{localStorage.setItem('cvm',vm)}catch(e){}d()});
     $('cl').innerHTML=banner+(list||'<p class="note">'+(q?'No encontramos ese producto. Escribinos por WhatsApp y te ayudamos.':'Todavía no hay productos.')+'</p>');
+    $('cl').querySelectorAll('[data-pd]').forEach(b=>b.onclick=()=>{const it=items.find(x=>x.n===b.dataset.pd);if(it)showDet(it)});
     $('cl').querySelectorAll('[data-o]').forEach(e=>e.onclick=()=>{open[e.dataset.o]=!open[e.dataset.o];d()});
     $('cl').querySelectorAll('[data-sh]').forEach(b=>b.onclick=e=>{e.stopPropagation();const it=items.find(x=>x.n===b.dataset.sh);if(it)shareCat(it)});
     $('cl').querySelectorAll('[data-pz]').forEach(im=>im.onclick=e=>{e.stopPropagation();const it=items.find(x=>x.n===im.dataset.pz);if(!it)return;lightbox(it.ph,it.n,()=>shareCat(it))});
-    $('cl').querySelectorAll('[data-el]').forEach(b=>b.onclick=()=>{const s=b.dataset.el,i=s.lastIndexOf('|'),nm=s.slice(0,i),n=s.slice(i+1);
-      const lp=$('lp2');if([...lp.options].every(x=>x.value!==nm)){const o=document.createElement('option');o.textContent=nm;lp.appendChild(o)}lp.value=nm;$('ln').value=n;
-      const ld=$('lead');ld.style.display='';ld.scrollIntoView({behavior:'smooth',block:'start'})})};
+    $('cl').querySelectorAll('[data-el]').forEach(b=>b.onclick=()=>pick(b.dataset.el))};
   $('cap').oninput=d;$('bq').oninput=d;const lf=$('lfr');lf.onchange=()=>{$('ldp').innerHTML=dpOpts(lf.value);$('ldl').textContent=lf.value==='w'?'Día de la semana':'Período de pago'};lf.onchange();leadInit();
   fb.fs.onSnapshot(fb.fs.collection(fb.db,'catalog'),sn=>{items=[];sn.docs.forEach(x=>x.id==='_cfg'?cfg=x.data():items.push(x.data()));
     first=false;d();fillProd(items);waFab(cfg.w)},()=>{$('cl').innerHTML='<p class="note">No se pudo cargar el catálogo.</p>'});
