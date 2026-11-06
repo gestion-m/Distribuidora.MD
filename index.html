@@ -125,6 +125,27 @@ async function gXls(){const F=gFilter(),T=gTot(F);
   add('Pedidos de clientes',[['Producto','Pedidos']].concat(gPed(F)));
   add('Gastos',[['Fecha','Detalle','Monto']].concat(F.expenses.map(e=>[e.date||'',e.desc,e.amount])));
   XLSX.writeFile(wb,'ganancias_'+ymd(new Date())+'.xlsx')}
+const NOTIFY_URL=''; // ← dirección del worker de avisos (Cloudflare), ej: 'https://avisos.tuusuario.workers.dev'
+async function notifyLead(t){try{if(!NOTIFY_URL||!fb||!fb.auth.currentUser)return;await fetch(NOTIFY_URL,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await fb.auth.currentUser.getIdToken()},body:JSON.stringify({text:t})})}catch(e){}}
+const FICHA_URL=''; // ← dirección del worker "ficha" (Cloudflare) que busca fichas técnicas en internet
+async function fichaWeb(name,cat){if(!FICHA_URL)throw new Error('config');if(!fb||!fb.auth.currentUser)throw new Error('login');const r=await fetch(FICHA_URL,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await fb.auth.currentUser.getIdToken()},body:JSON.stringify({name:dn(name),cat})});if(r.status===429)throw new Error('cuota');if(!r.ok)throw new Error('ia');const j=await r.json();return String(j.text||'').trim()}
+const fichaErr=e=>e.message==='config'?'Falta configurar FICHA_URL (worker de fichas).':e.message==='cuota'?'Se acabó el cupo gratis de hoy. Probá mañana.':'No se pudo buscar la ficha. Probá de nuevo en un momento.';
+function mergeSpecTxt(cur,add){const L=String(cur||'').split('\n'),idx={};L.forEach((l,i)=>{if(l.includes(':'))idx[nz(l.split(':')[0]).trim()]=i});
+  String(add||'').split('\n').forEach(l=>{const m=l.match(/^\s*[-•*]?\s*([^:]{2,30}):\s*(.+)$/);if(!m)return;const lab=m[1].replace(/\*+/g,'').trim(),val=m[2].replace(/\*+/g,'').replace(/\[\d+(,\s*\d+)*\]/g,'').trim(),k=nz(lab);if(!val)return;
+    if(idx[k]!=null){const cl=L[idx[k]];if(!cl.slice(cl.indexOf(':')+1).trim())L[idx[k]]=lab+': '+val}else{idx[k]=L.length;L.push(lab+': '+val)}});
+  return L.filter(l=>l.trim()).join('\n')}
+let _bulk=false;
+async function bulkFichas(){const bt=()=>$('pbulk')||{},ms=()=>$('pbm')||{};if(_bulk){_bulk=false;return}
+  const has=p=>/^[^:\n]{2,30}:\s*\S/m.test(p.desc||''),L=S.products.filter(p=>!has(p));
+  if(!L.length){ms().textContent='Todos los productos ya tienen ficha.';return}
+  if(!confirm('Voy a buscar en internet la ficha de '+L.length+' producto(s) que no tienen. Tarda unos segundos por producto. ¿Seguimos?'))return;
+  _bulk=true;bt().textContent='⏹ Detener';let ok=0,bad=0,why='';
+  for(let i=0;i<L.length&&_bulk;i++){const p=L[i];ms().textContent='🔎 '+(i+1)+'/'+L.length+': '+dn(p.name)+'…';
+    try{const t=await fichaWeb(p.name,catOf(p)),cur=S.products.find(x=>x.id===p.id)||p,m=mergeSpecTxt(cur.desc,t);if(has({desc:m})){await put('products',{...cur,desc:m});ok++}else bad++}
+    catch(e){bad++;if(e.message==='cuota'||e.message==='config'){why=e.message;break}}
+    await new Promise(r=>setTimeout(r,6500))}
+  const stopped=!_bulk;_bulk=false;bt().textContent='🔎 Completar fichas de todos los productos (IA)';
+  ms().textContent=(why==='cuota'?'Se acabó el cupo gratis de hoy: seguí mañana. ':why==='config'?'Falta configurar FICHA_URL. ':stopped?'Detenido. ':'Listo. ')+'Completados: '+ok+(bad?' · sin datos: '+bad:'')+'. Revisá las fichas: pueden tener errores.'}
 const IA_URL='https://ia-ventas.joha461.workers.dev'; // ← acá va la dirección de tu servidor de IA (Cloudflare), ej: 'https://ia-ventas.algo.workers.dev'
 let tab='cuotas', fb=null;
 const S={config:{recargo:.03,colchon:.07,anticipo:.4},products:[],sales:[],expenses:[],leads:[],receipts:[],vipReq:[],vipOk:[]};
@@ -326,9 +347,9 @@ function build(){nav();const a=$('app');
     <details class="sub" id="accfoto" data-acc="foto" ${op('foto')}><summary>📷 Foto y descripción</summary><label>Foto del producto (opcional)</label><input id="pf" type="file" accept="image/*"><p class="note" id="pmsg">Subí la foto y la IA te sugiere nombre y descripción.</p>
     <div id="pia" style="display:none"><label>Estilo de la foto con IA</label><select id="pest"><option value="estudio">Fondo de estudio</option><option value="ambiente">En un ambiente (living, local…)</option><option value="modelo">Con una modelo</option></select>
     <button class="btn" id="pmej" type="button" style="margin-top:8px">✨ Mejorar con IA</button><div id="pprev" style="margin-top:10px"></div></div>
-    <label>Descripción y ficha técnica (una línea por dato, ej. «Cámara frontal: 8 MP»)</label><textarea id="pd" rows="6" placeholder="Opcional"></textarea><button class="btn s" id="ptpl" type="button">📋 Agregar ficha técnica (RAM, cámara, batería…)</button></details>
+    <label>Descripción y ficha técnica (una línea por dato, ej. «Cámara frontal: 8 MP»)</label><textarea id="pd" rows="6" placeholder="Opcional"></textarea><button class="btn s" id="ptpl" type="button">📋 Agregar ficha técnica (RAM, cámara, batería…)</button> <button class="btn s g" id="pfw" type="button">🔎 Buscar ficha en internet (IA)</button></details>
     <button class="btn g" id="padd">Guardar producto</button></details>
-    <details class="acc card" data-acc="mis" ${op('mis')}><summary><h2>MIS PRODUCTOS</h2></summary><div id="pvm" class="chips"></div><label>🔍 Buscar</label><input id="pq" type="search" placeholder="Nombre o distribuidora" autocomplete="off"><label>Categoría</label><select id="pcf"></select><label>Distribuidora</label><select id="pdf"><option value="">Todas</option></select><div id="plist" style="margin-top:6px"></div></details>
+    <details class="acc card" data-acc="mis" ${op('mis')}><summary><h2>MIS PRODUCTOS</h2></summary><div id="pvm" class="chips"></div><button class="btn s" id="pbulk" type="button" style="margin:0 0 6px">🔎 Completar fichas de todos los productos (IA)</button><p class="note" id="pbm" style="margin:0 0 6px"></p><label>🔍 Buscar</label><input id="pq" type="search" placeholder="Nombre o distribuidora" autocomplete="off"><label>Categoría</label><select id="pcf"></select><label>Distribuidora</label><select id="pdf"><option value="">Todas</option></select><div id="plist" style="margin-top:6px"></div></details>
     <details class="acc card" data-acc="aj" ${op('aj')}><summary><h2>AJUSTES DE FINANCIACIÓN</h2></summary>
     <details class="sub" data-acc="a1" ${op('a1')}><summary>🔔 Promo, punitorios y avisos</summary><label>Compras previas para la promo (plan Vencida)</label><input id="spm" type="number" value="${S.config.promoMin||5}">
     <label>Punitorios: % por cada día de atraso (sobre la cuota)</label><input id="spun" type="number" step="0.1" value="${punit()}">
@@ -369,6 +390,10 @@ function build(){nav();const a=$('app');
     <button class="btn g" id="kgen">Guardar y publicar catálogo</button>
     <label style="margin-top:12px">Link para compartir</label><textarea id="kout" readonly rows="2">${esc(location.href.split('#')[0])}#catalogo</textarea>
     <button class="btn" id="kcopy">Copiar link</button>
+    <h3 style="margin:16px 0 2px;font-size:1.05rem">LINK POR CATEGORÍA Y MARCA</h3><p class="note" style="margin:0 0 4px">Para cuando un cliente pregunta "¿qué celulares tenés?": elegí la categoría y la marca y mandale ese link. Abre el catálogo ya filtrado.</p>
+    <div class="row"><div><label>Categoría</label><select id="klc"></select></div><div><label>Marca</label><select id="klb"></select></div></div>
+    <textarea id="klo" readonly rows="2" style="margin-top:8px"></textarea>
+    <div class="row"><button class="btn" id="klcp" type="button">Copiar link</button><button class="btn g" id="klwa" type="button">📲 Mandar por WhatsApp</button></div>
     <p class="note">El cliente ve fotos, nombres, precio de contado y cuánto paga en 3, 6 y 12 cuotas, siempre actualizado. No ve costos, márgenes ni ganancias.${fb?'':' Para que funcione falta configurar Firebase.'}</p></div>`;
   bind();refresh();
 }
@@ -389,7 +414,7 @@ function catView(){
     <p class="note">Verificamos tu email con un link. Tus datos se usan solo para esta compra.</p></div>`;
   let items=[],cfg={a:.4,w:''},first=true;
   const sel={};
-  const open={};let cf='',bf='',vm='g',vip=false,vipFv={},fq='m',vopen=false;
+  const open={};const dec=x=>{try{return decodeURIComponent(x)}catch(e){return ''}},hm=location.hash.match(/^#catalogo=([^~]*)(?:~(.*))?$/);let cf=hm?dec(hm[1]):'',bf=hm&&hm[2]?dec(hm[2]):'',vm='g',vip=false,vipFv={},fq='m',vopen=false;
   const FK={m:1,q:2,w:4},FN={m:'',q:' quincenales',w:' semanales'},FS={m:'Mes siguiente',q:'Quincena siguiente',w:'Semana siguiente'};try{vm=localStorage.getItem('cvm')==='l'?'l':'g'}catch(e){}
   const pick=s=>{const i=s.lastIndexOf('|'),nm=s.slice(0,i),n=s.slice(i+1);
       const lp=$('lp2');if([...lp.options].every(x=>x.value!==nm)){const o=document.createElement('option');o.textContent=nm;lp.appendChild(o)}lp.value=nm;$('ln').value=n;if($('lfr')){$('lfr').value=fq;$('lfr').onchange()}
@@ -491,7 +516,7 @@ async function leadInit(){
     else{if(!v('lem'))$('lem').value=cu.email;const em=v('lem').toLowerCase();
       if(em&&em!==cu.email.toLowerCase()){st(`<p class="note">Ahora estás identificado como <b>${esc(cu.email)}</b>, pero escribiste <b>${esc(em)}</b>. Cerrá esa sesión para verificar el email que escribiste.</p><button class="btn g" id="bso" type="button">Cerrar sesión y verificar este email</button>`);$('bso').onclick=async()=>{try{await A.signOut(fb.auth)}catch(x){}};return}
       st(`<p class="note">✔ Email verificado: <b>${esc(cu.email)}</b> · <a href="#catalogo" id="bso2">no soy yo</a></p><button class="btn g" id="b4">3. Enviar mi solicitud</button>`);$('bso2').onclick=async e=>{e.preventDefault();try{await A.signOut(fb.auth)}catch(x){}};
-      $('b4').onclick=async()=>{const e=val();if(e)return say(e);try{await fb.fs.setDoc(fb.fs.doc(fb.db,'leads',cu.uid+'_'+Date.now()),{uid:cu.uid,name:v('lnm'),dni:v('ldni'),addr:v('lad'),city:v('lci'),partido:v('lpa'),phone:e164(v('ltel')),email:cu.email,product:$('lp2').value,cuotas:$('ln').value,createdAt:Date.now(),dniOk:false,freq:$('lfr').value,dp:Number($('ldp').value)});try{localStorage.removeItem('lead')}catch(x){}st('<p><b>¡Listo!</b> Recibimos tus datos. Te escribimos pronto.</p>')}catch(x){say('No se pudo enviar. Probá de nuevo.')}}}}
+      $('b4').onclick=async()=>{const e=val();if(e)return say(e);try{await fb.fs.setDoc(fb.fs.doc(fb.db,'leads',cu.uid+'_'+Date.now()),{uid:cu.uid,name:v('lnm'),dni:v('ldni'),addr:v('lad'),city:v('lci'),partido:v('lpa'),phone:e164(v('ltel')),email:cu.email,product:$('lp2').value,cuotas:$('ln').value,createdAt:Date.now(),dniOk:false,freq:$('lfr').value,dp:Number($('ldp').value)});try{localStorage.removeItem('lead')}catch(x){}notifyLead('🛒 NUEVO PEDIDO\n'+v('lnm')+'\n'+$('lp2').value+'\n'+$('ln').selectedOptions[0].text+' · '+$('lfr').selectedOptions[0].text+' ('+$('ldp').selectedOptions[0].text+')\n📱 '+e164(v('ltel'))+'\n✉ '+cu.email+'\n📍 '+v('lad')+', '+v('lci'));st('<p><b>¡Listo!</b> Recibimos tus datos. Te escribimos pronto.</p>')}catch(x){say('No se pudo enviar. Probá de nuevo.')}}}}
   if(A.isSignInWithEmailLink(fb.auth,location.href)){try{await A.signInWithEmailLink(fb.auth,dr.lem||prompt('Confirmá tu email'),location.href);history.replaceState(null,'',location.pathname+'#catalogo')}catch(e){say('El link venció o no es válido. Pedí otro.')}}
   A.onAuthStateChanged(fb.auth,u=>{cu=u;step()});$('lem').addEventListener('change',()=>{if(cu&&cu.emailVerified)step()});
 }
@@ -560,6 +585,16 @@ function bind(){
       $('pmsg').textContent=j.nombre?'✨ Sugerido por la IA: revisalo y corregilo si hace falta.':'No pude reconocer el producto. Escribí el nombre.'+(j.raw?' (La IA dijo: '+j.raw.slice(0,90)+')':'')}
     catch(e){$('pmsg').textContent=e.message==='img'?'No pude leer esa foto. Probá con otra, o sacala de nuevo en formato JPG.':'La IA no respondió. Probá de nuevo en un momento o escribí el nombre a mano.'}};
   on('ptpl',()=>{const n=$('pn').value.trim();addTpl('pd',n,$('pcat').value||guessCat(n))});
+  on('pfw',async()=>{const n=$('pn').value.trim(),b=$('pfw');if(!n){$('pmsg').textContent='Escribí el nombre del producto primero.';return}b.disabled=true;b.textContent='🔎 Buscando…';
+    try{const t=await fichaWeb(n,$('pcat').value||guessCat(n));$('pd').value=mergeSpecTxt($('pd').value,t);$('pmsg').textContent=t?'✔ Ficha completada desde internet. Revisala antes de guardar.':'No encontré datos de ese producto.'}catch(e){$('pmsg').textContent=fichaErr(e)}b.disabled=false;b.textContent='🔎 Buscar ficha en internet (IA)'});
+  on('pbulk',bulkFichas);
+  if($('klc')){const base=location.href.split('#')[0].split('?')[0];
+    const fillB=()=>{const c=$('klc').value,bs=[...new Set(S.products.filter(p=>!c||catOf(p)===c).map(brandOf).filter(Boolean))].sort();$('klb').innerHTML='<option value="">Todas las marcas</option>'+bs.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('')};
+    const upd=()=>{const c=$('klc').value,b=$('klb').value;$('klo').value=base+'#catalogo'+(c||b?'='+encodeURIComponent(c)+(b?'~'+encodeURIComponent(b):''):'')};
+    $('klc').innerHTML='<option value="">Todas las categorías</option>'+catUsed().map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');fillB();upd();
+    $('klc').onchange=()=>{fillB();upd()};$('klb').onchange=upd;
+    $('klcp').onclick=async()=>{try{await navigator.clipboard.writeText($('klo').value);$('klcp').textContent='¡Copiado!'}catch(e){$('klo').select()}};
+    $('klwa').onclick=()=>{const c=$('klc').value,b=$('klb').value;window.open('https://wa.me/?text='+encodeURIComponent('Mirá '+(c?c.toLowerCase():'los productos')+(b?' '+b:'')+' que tengo disponibles, con precio y cuotas:\n'+$('klo').value),'_blank')}}
   on('pmej',async()=>{const f=$('pf').files[0],b=$('pmej'),pv=$('pprev');if(!f)return;
     if(!(fb&&fb.fn)){$('pmsg').textContent='La IA todavía no está configurada.';return}
     b.disabled=true;pv.innerHTML='';$('pmsg').textContent='✨ Armando la foto profesional… puede tardar hasta 1 minuto.';
@@ -760,12 +795,13 @@ function editProd(id){const p=S.products.find(x=>x.id===id);if(!p)return;let fot
     <div class="row"><div><label>Costo</label><input id="ec" type="number" inputmode="decimal" value="${p.cost}"></div><div><label>Margen %</label><input id="em" type="number" inputmode="decimal" step="0.01" value="${+(+p.margin||0).toFixed(2)}"></div></div>
     <label>Precio de contado (si lo cambiás, se recalcula el margen)</label><input id="ep" type="number" inputmode="numeric" value="${Math.round(contado(p))}">
     <label>Stock</label><input id="es" type="number" value="${p.stock}">
-    <label>Descripción y ficha técnica (una línea por dato, ej. «Cámara frontal: 8 MP»)</label><textarea id="edd" rows="7">${esc(p.desc||'')}</textarea><button class="btn s" id="etpl" type="button">📋 Agregar ficha técnica</button>
+    <label>Descripción y ficha técnica (una línea por dato, ej. «Cámara frontal: 8 MP»)</label><textarea id="edd" rows="7">${esc(p.desc||'')}</textarea><button class="btn s" id="etpl" type="button">📋 Agregar ficha técnica</button> <button class="btn s g" id="efw" type="button">🔎 Buscar ficha en internet (IA)</button>
     <label>Foto</label><div id="efp"></div><input id="eff" type="file" accept="image/*">
     <label>Estilo de la foto con IA</label><select id="eest"><option value="estudio">Fondo de estudio</option><option value="ambiente">En un ambiente</option><option value="modelo">Con una modelo</option></select>
     <button class="btn" id="emej" type="button" style="margin-top:8px">✨ Mejorar foto con IA</button><div id="eprev" style="margin-top:8px"></div><p class="note" id="emsg"></p>
     <button class="btn g" id="esv" type="button" style="width:100%">Guardar cambios</button>`);
-  distBind('ed');catBind('ecat');$('etpl').onclick=()=>addTpl('edd',$('en').value,$('ecat').value||guessCat($('en').value));const show=()=>{$('efp').innerHTML=foto?`<img src="${foto}" alt="" style="width:100%;max-height:220px;object-fit:contain;border-radius:12px;background:var(--paper)">`:'<p class="note">Sin foto.</p>'};show();
+  distBind('ed');catBind('ecat');$('etpl').onclick=()=>addTpl('edd',$('en').value,$('ecat').value||guessCat($('en').value));
+  $('efw').onclick=async()=>{const n=$('en').value.trim(),b=$('efw');if(!n)return;b.disabled=true;b.textContent='🔎 Buscando…';try{const t=await fichaWeb(n,$('ecat').value||guessCat(n));$('edd').value=mergeSpecTxt($('edd').value,t);$('emsg').textContent=t?'✔ Ficha completada desde internet. Revisala y tocá "Guardar cambios".':'No encontré datos de ese producto.'}catch(e){$('emsg').textContent=fichaErr(e)}b.disabled=false;b.textContent='🔎 Buscar ficha en internet (IA)'};const show=()=>{$('efp').innerHTML=foto?`<img src="${foto}" alt="" style="width:100%;max-height:220px;object-fit:contain;border-radius:12px;background:var(--paper)">`:'<p class="note">Sin foto.</p>'};show();
   const byCost=()=>{ult='m';$('ep').value=Math.round(num('ec')*(1+num('em')/100))};
   $('ec').oninput=byCost;$('em').oninput=byCost;
   $('ep').oninput=()=>{ult='p';const c=num('ec');if(c>0)$('em').value=+((num('ep')/c-1)*100).toFixed(2)};
@@ -866,7 +902,7 @@ let _rs=0,_pp=0;const _refresh=refresh;refresh=function(){_refresh();if(fb&&fb.f
 /* ==================== FIN INTELIGENCIA ARTIFICIAL ==================== */
 
 (async()=>{
-  const cm=location.hash==='#catalogo'||/oobCode=/.test(location.search),pm=location.hash.match(/^#pago=(\w+)/);
+  const cm=/^#catalogo/.test(location.hash)||/oobCode=/.test(location.search),pm=location.hash.match(/^#pago=(\w+)/);
   if(!FIREBASE_CONFIG){if(cm||pm){$('app').innerHTML='<div class="card">Catálogo no configurado todavía.</div>';return}$('sync').textContent='Solo en este dispositivo (falta Firebase)';build();return}
   try{const B='https://www.gstatic.com/firebasejs/10.12.2/';
     const[A,F,U]=await Promise.all([import(B+'firebase-app.js'),import(B+'firebase-firestore.js'),import(B+'firebase-auth.js')]);
