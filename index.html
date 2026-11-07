@@ -128,8 +128,8 @@ async function gXls(){const F=gFilter(),T=gTot(F);
 const NOTIFY_URL='https://avisos.joha461.workers.dev'; // ← dirección del worker de avisos (Cloudflare), ej: 'https://avisos.tuusuario.workers.dev'
 async function notifyLead(t){try{if(!NOTIFY_URL||!fb||!fb.auth.currentUser)return;await fetch(NOTIFY_URL,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await fb.auth.currentUser.getIdToken()},body:JSON.stringify({text:t})})}catch(e){}}
 const FICHA_URL='https://ficha.joha461.workers.dev'; // ← dirección del worker "ficha" (Cloudflare) que busca fichas técnicas en internet
-async function fichaWeb(name,cat){if(!FICHA_URL)throw new Error('config');if(!fb||!fb.auth.currentUser)throw new Error('login');const r=await fetch(FICHA_URL,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await fb.auth.currentUser.getIdToken()},body:JSON.stringify({name:dn(name),cat})});if(r.status===429)throw new Error('cuota');if(!r.ok)throw new Error('ia');const j=await r.json();return String(j.text||'').trim()}
-const fichaErr=e=>e.message==='config'?'Todavía no está activada la búsqueda con IA (falta el paso del worker de fichas). Mientras tanto usá «Agregar ficha técnica» y completá los datos a mano.':e.message==='cuota'?'Se acabó el cupo gratis de hoy. Probá mañana.':'No se pudo buscar la ficha. Probá de nuevo en un momento.';
+async function fichaWeb(name,cat){if(!FICHA_URL)throw new Error('config');if(!fb||!fb.auth.currentUser)throw new Error('login');const r=await fetch(FICHA_URL,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await fb.auth.currentUser.getIdToken()},body:JSON.stringify({name:dn(name),cat})});if(r.status===429)throw new Error('cuota');if(!r.ok){let c=r.status;try{const q=await r.json();if(q&&q.error)c=q.error}catch(x){}throw new Error('ia:'+c)}const j=await r.json();return String(j.text||'').trim()}
+const fichaErr=e=>e.message==='config'?'Todavía no está activada la búsqueda con IA (falta el paso del worker de fichas). Mientras tanto usá «Agregar ficha técnica» y completá los datos a mano.':e.message==='cuota'?'Se acabó el cupo gratis de hoy. Probá mañana.':'No se pudo buscar la ficha. Probá de nuevo en un momento.'+(String(e.message).startsWith('ia:')?' (código: '+String(e.message).slice(3)+')':'');
 function mergeSpecTxt(cur,add){const L=String(cur||'').split('\n'),idx={};L.forEach((l,i)=>{if(l.includes(':'))idx[nz(l.split(':')[0]).trim()]=i});
   String(add||'').split('\n').forEach(l=>{const m=l.match(/^\s*[-•*]?\s*([^:]{2,30}):\s*(.+)$/);if(!m)return;const lab=m[1].replace(/\*+/g,'').trim(),val=m[2].replace(/\*+/g,'').replace(/\[\d+(,\s*\d+)*\]/g,'').trim(),k=nz(lab);if(!val)return;
     if(idx[k]!=null){const cl=L[idx[k]];if(!cl.slice(cl.indexOf(':')+1).trim())L[idx[k]]=lab+': '+val}else{idx[k]=L.length;L.push(lab+': '+val)}});
@@ -437,9 +437,9 @@ function catView(){
     m.querySelectorAll('[data-el]').forEach(b=>b.onclick=()=>{m.remove();pick(b.dataset.el)});
     m.querySelectorAll('[data-pz]').forEach(im=>im.onclick=()=>lightbox(it.ph,it.n,()=>shareCat(it)));
     m.querySelector('[data-shm]').onclick=()=>shareCat(it)};
-  const d=()=>{{const ct=it=>it.c||guessCat(it.n),bt=it=>it.b||guessBrand(it.n),cs=[...new Set(items.map(ct))].sort();if(cf&&!cs.includes(cf))cf='';
+  const d=()=>{{const ct=it=>it.c||guessCat(it.n),bt=it=>it.b||guessBrand(it.n),cs=[...new Set(items.map(ct))].sort();if(cf&&items.length&&!cs.includes(cf))cf='';
     $('cchips').innerHTML=cs.length>1?['',...cs].map(c=>`<button class="${cf===c?'on':''}" data-cc="${esc(c)}" type="button">${c?esc(c):'Todos'}</button>`).join(''):'';
-    const bs=[...new Set(items.filter(it=>!cf||ct(it)===cf).map(bt).filter(Boolean))].sort();if(bf&&!bs.includes(bf))bf='';
+    const bs=[...new Set(items.filter(it=>!cf||ct(it)===cf).map(bt).filter(Boolean))].sort();if(bf&&items.length&&!bs.includes(bf))bf='';
     $('bchips').innerHTML=bs.length>1?['',...bs].map(b=>`<button class="${bf===b?'on':''}" data-bb="${esc(b)}" type="button">${b?esc(b):'Todas las marcas'}</button>`).join(''):'';
     $('cchips').querySelectorAll('[data-cc]').forEach(b=>b.onclick=()=>{cf=b.dataset.cc;bf='';d()});
     $('bchips').querySelectorAll('[data-bb]').forEach(b=>b.onclick=()=>{bf=b.dataset.bb;d()});
