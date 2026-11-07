@@ -125,9 +125,9 @@ async function gXls(){const F=gFilter(),T=gTot(F);
   add('Pedidos de clientes',[['Producto','Pedidos']].concat(gPed(F)));
   add('Gastos',[['Fecha','Detalle','Monto']].concat(F.expenses.map(e=>[e.date||'',e.desc,e.amount])));
   XLSX.writeFile(wb,'ganancias_'+ymd(new Date())+'.xlsx')}
-const NOTIFY_URL=''; // ← dirección del worker de avisos (Cloudflare), ej: 'https://avisos.tuusuario.workers.dev'
+const NOTIFY_URL='https://avisos.joha461.workers.dev'; // ← dirección del worker de avisos (Cloudflare), ej: 'https://avisos.tuusuario.workers.dev'
 async function notifyLead(t){try{if(!NOTIFY_URL||!fb||!fb.auth.currentUser)return;await fetch(NOTIFY_URL,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await fb.auth.currentUser.getIdToken()},body:JSON.stringify({text:t})})}catch(e){}}
-const FICHA_URL=''; // ← dirección del worker "ficha" (Cloudflare) que busca fichas técnicas en internet
+const FICHA_URL='https://ficha.joha461.workers.dev'; // ← dirección del worker "ficha" (Cloudflare) que busca fichas técnicas en internet
 async function fichaWeb(name,cat){if(!FICHA_URL)throw new Error('config');if(!fb||!fb.auth.currentUser)throw new Error('login');const r=await fetch(FICHA_URL,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await fb.auth.currentUser.getIdToken()},body:JSON.stringify({name:dn(name),cat})});if(r.status===429)throw new Error('cuota');if(!r.ok)throw new Error('ia');const j=await r.json();return String(j.text||'').trim()}
 const fichaErr=e=>e.message==='config'?'Todavía no está activada la búsqueda con IA (falta el paso del worker de fichas). Mientras tanto usá «Agregar ficha técnica» y completá los datos a mano.':e.message==='cuota'?'Se acabó el cupo gratis de hoy. Probá mañana.':'No se pudo buscar la ficha. Probá de nuevo en un momento.';
 function mergeSpecTxt(cur,add){const L=String(cur||'').split('\n'),idx={};L.forEach((l,i)=>{if(l.includes(':'))idx[nz(l.split(':')[0]).trim()]=i});
