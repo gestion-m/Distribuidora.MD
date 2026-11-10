@@ -799,11 +799,13 @@ function promptGPT(p){const L=NS.filter(n=>n<=4).map(n=>{const t=financed(p,n);r
     bt.disabled=true;bt.textContent='Generando… puede tardar un minuto';o.textContent='';
     try{const ph=await photoB64(p.photo);const r=await fetch(FICHA_URL,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await fb.auth.currentUser.getIdToken()},body:JSON.stringify({imagen:true,prompt:t,photo:ph.data,mime:ph.mime})});
       let j={};try{j=await r.json()}catch(x){}
-      if(r.status===429)throw new Error('Se acabó el cupo de hoy.');
-      if(!r.ok||!j.image)throw new Error('No se pudo generar la imagen (código: '+(j.error||r.status)+').');
-      const src='data:'+(j.mime||'image/png')+';base64,'+j.image;
+      if(r.status===429||(j.error&&j.error.code===429))throw new Error('Se acabó el cupo de hoy de Gemini. Probá mañana o usá ChatGPT.');
+      if(!r.ok||j.error){const m=(j.error&&(j.error.message||j.error))||'';throw new Error('No se pudo generar la imagen (código: '+(r.status)+(m?' · '+String(m).slice(0,140):'')+').')}
+      const ps=(j.candidates&&j.candidates[0]&&j.candidates[0].content&&j.candidates[0].content.parts)||[],pi=ps.find(x=>x.inlineData||x.inline_data),dd=pi&&(pi.inlineData||pi.inline_data);
+      if(!dd||!dd.data)throw new Error('Gemini no devolvió una imagen. Probá de nuevo.');
+      const src='data:'+(dd.mimeType||dd.mime_type||'image/png')+';base64,'+dd.data;
       o.innerHTML=`<img src="${src}" style="width:100%;border-radius:12px;margin-top:10px"><a class="btn g" style="display:inline-block;text-decoration:none" download="publicidad.png" href="${src}">⬇ Bajar imagen</a><p class="note">Revisá nombre, precios y que el producto se vea bien antes de publicar.</p>`}
-    catch(e){o.textContent=e.message||'Error'}
+    catch(e){o.textContent=/failed to fetch|networkerror|load failed/i.test(e.message||'')?'No se pudo conectar con el worker ficha. Revisá que lo hayas actualizado con el código nuevo y que tenga GEMINI_API_KEY cargada en Production.':(e.message||'Error')}
     bt.disabled=false;bt.textContent='✨ Generar imagen con Gemini'}}
 function editProd(id){const p=S.products.find(x=>x.id===id);if(!p)return;let foto=p.photo||'',file=null,ult='m';
   const b=iaModal('✏ EDITAR PRODUCTO',`<label>Nombre</label><input id="en" value="${esc(p.name)}">
