@@ -572,6 +572,9 @@ function bind(){
       const dm=raw.split(/\n/).map(x=>x.trim()).find(l=>/distribuci[oó]n|distribuidora|mayorista|importadora/i.test(l)&&l.length<45);
       if(dm&&$('mdist')&&!$('mdist').value.trim())setDist('mdist',dm.replace(/^[^A-Za-zÁÉÍÓÚÑ]+/,'').replace(/[\s.,;:|>»]+$/,'').replace(/(^|\s)(\S)/g,(a,b,c)=>b+c.toUpperCase()));
       let t=limpiarOCR(raw);
+      /* flyer de un solo producto (ej. "REPOSERA 5 POSICIONES"): el OCR lee mal las letras de diseño, así que el nombre lo toma la IA de la foto */
+      {const pl=t.split(/\n/).filter(l=>/\$\s*\d/.test(l));
+       if(pl.length<=1&&fb&&fb.fn){try{const e=$('mpr');if(e)e.textContent='✨ La IA está mirando la foto…';const r=await ia('producto',{img:await shrink(f,640,.7)}),nm=((r.json||{}).nombre||'').trim(),pm=pl[0]&&/\$\s*\d[\d.,]*/.exec(pl[0]);if(nm)t=nm+(pm?'\n'+pm[0]:'')}catch(e){}}}
       if(!t.trim()){$('mres').innerHTML='<p class="neg note">No pude leer texto en la imagen. Probá con otra captura o pegá el texto.</p>';return}
       $('mtx').value=t;$('mleer').click()}
     catch(e){$('mres').innerHTML='<p class="neg note">No pude leer la imagen. Revisá tu conexión o pegá el texto a mano.</p>'}};
