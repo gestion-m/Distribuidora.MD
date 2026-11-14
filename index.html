@@ -572,11 +572,16 @@ function bind(){
       const dm=raw.split(/\n/).map(x=>x.trim()).find(l=>/distribuci[oó]n|distribuidora|mayorista|importadora/i.test(l)&&l.length<45);
       if(dm&&$('mdist')&&!$('mdist').value.trim())setDist('mdist',dm.replace(/^[^A-Za-zÁÉÍÓÚÑ]+/,'').replace(/[\s.,;:|>»]+$/,'').replace(/(^|\s)(\S)/g,(a,b,c)=>b+c.toUpperCase()));
       let t=limpiarOCR(raw);
-      /* la IA (Gemini, por el worker ficha) lee TODOS los productos y precios de la imagen; si falla se usa el OCR de siempre */
-      if(FICHA_URL&&fb&&fb.auth&&fb.auth.currentUser){try{const e=$('mpr');if(e)e.textContent='✨ La IA está leyendo todos los productos…';
-        const ph=(await shrink(f,1400,.82)).split(',')[1],r=await fetch(FICHA_URL,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await fb.auth.currentUser.getIdToken()},body:JSON.stringify({leer:true,photo:ph,mime:'image/jpeg'})});
-        if(r.ok){const g=await r.json(),tx=((g.candidates&&g.candidates[0]&&g.candidates[0].content&&g.candidates[0].content.parts)||[]).map(x=>x.text||'').join('').replace(/```json|```/g,'').trim(),jj=JSON.parse(tx),arr=Array.isArray(jj)?jj:(jj.productos||[]),ln=arr.filter(x=>x&&x.nombre&&Number(x.precio)>0).map(x=>String(x.nombre).replace(/[$\n]/g,' ').trim()+' $'+Math.round(Number(x.precio)));
-          if(ln.length)t=ln.join('\n')}}catch(e){}}
+      /* la IA (Gemini, por el worker ficha) lee TODOS los productos y precios de la imagen; si falla se usa el OCR de siempre y se avisa por qué */
+      window._aiWarn='';
+      if(FICHA_URL&&fb&&fb.auth&&fb.auth.currentUser){let why='';try{const e=$('mpr');if(e)e.textContent='✨ La IA está leyendo todos los productos…';
+        const ph=(await shrink(f,1400,.82)).split(',')[1],r=await fetch(FICHA_URL,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await fb.auth.currentUser.getIdToken()},body:JSON.stringify({leer:true,photo:ph,mime:'image/jpeg'})}),g=await r.json().catch(()=>({}));
+        if(!r.ok){const m=g.error&&(g.error.message||g.error);why='código '+r.status+(m?' · '+String(m).slice(0,120):'')+(r.status===400||r.status===404?' · ¿actualizaste el worker ficha con el código nuevo?':'')}
+        else{const tx=((g.candidates&&g.candidates[0]&&g.candidates[0].content&&g.candidates[0].content.parts)||[]).map(x=>x.text||'').join('').replace(/```json|```/g,'').trim(),jj=JSON.parse(tx),arr=Array.isArray(jj)?jj:(jj.productos||[]),ln=arr.filter(x=>x&&x.nombre&&Number(x.precio)>0).map(x=>String(x.nombre).replace(/[$\n]/g,' ').trim()+' $'+Math.round(Number(x.precio)));
+          if(ln.length)t=ln.join('\n');else why='no encontró productos con precio'}
+      }catch(e){why=/failed to fetch|network|load failed/i.test(e.message||'')?'no se pudo conectar con el worker ficha':String(e.message||'error').slice(0,120)}
+        if(why)window._aiWarn='⚠ La IA no pudo leer la imagen ('+why+'). Se usó el lector básico, que lee mal las imágenes de diseño.'}
+      else window._aiWarn='⚠ La lectura con IA no está disponible (falta iniciar sesión o FICHA_URL).';
       if(!t.trim()){$('mres').innerHTML='<p class="neg note">No pude leer texto en la imagen. Probá con otra captura o pegá el texto.</p>';return}
       $('mtx').value=t;$('mleer').click()}
     catch(e){$('mres').innerHTML='<p class="neg note">No pude leer la imagen. Revisá tu conexión o pegá el texto a mano.</p>'}};
@@ -765,7 +770,7 @@ async function recortar(f){try{const i=await loadImg(f),k=Math.min(1,400/i.heigh
     return await new Promise(ok=>o.toBlob(b=>ok(b?new File([b],'producto.jpg',{type:'image/jpeg'}):f),'image/jpeg',.9))}catch(e){return f}}
 function drawM(){const el=$('mres');if(!el)return;const m=num('pm')||0,dl=dolar(),lista=_mi.length>1;
   const cst=x=>x.usd?(dl?Math.round(x.usd*dl):0):x.costo,ns=_mi.filter(x=>x.sel&&!x.saved).length;
-  el.innerHTML=(_mi.some(x=>x.usd)&&!dl?'<p class="neg note">Falta la cotización del dólar: escribila arriba para ver los precios en pesos.</p>':'')+
+  el.innerHTML=(window._aiWarn?'<p class="neg note">'+window._aiWarn+'</p>':'')+(_mi.some(x=>x.usd)&&!dl?'<p class="neg note">Falta la cotización del dólar: escribila arriba para ver los precios en pesos.</p>':'')+
    (lista?`<div class="row" style="margin-bottom:6px"><button class="btn s" id="mall" type="button">☑ Elegir todos</button><button class="btn s g" id="msv" type="button" ${ns?'':'disabled'}>💾 Guardar ${ns} elegido(s)</button></div><p class="note" style="margin:0 0 4px">Tildá los que quieras y guardalos juntos, o tocá "Usar" en uno para completar el formulario. La lista queda acá.</p>`:'')+
    _mi.map((x,i)=>{const c=cst(x),p=c?{cost:c,margin:m}:null;
     return `<div class="item" style="align-items:flex-start"><div>${x.saved?'<span class="tag ok">✔ Guardado</span>':`<label style="display:flex;gap:8px;align-items:center;margin:0 0 4px;font-size:.8rem"><input type="checkbox" data-mc="${i}" ${x.sel?'checked':''} style="width:auto;margin:0"> Elegir</label>`}<b>${esc(x.nombre)}</b><small>${esc(x.descripcion||'')}</small>`+(x.usd?`<small>Lista: US$ ${x.usd}${dl?' × $'+dl.toLocaleString('es-AR')+' = <b>'+money(c)+'</b> (tu costo)':''}</small>`:'')+(p?`<small>${x.usd?'':'Costo '+money(c)+' · '}Contado ${money(contado(p))} · ganancia ${money(contado(p)-c)}</small>`+NS.map(n=>{const t=financed(p,n);return `<small>${n} cuotas de ${money(t/n)} · total ${money(t)} · ganancia ${money(t-c)}</small>`}).join(''):'<small class="neg">No encontré el precio: cargalo a mano.</small>')+`</div><div style="display:flex;flex-direction:column;gap:4px"><button class="btn s g" data-mu="${i}" type="button">Usar</button>${p?`<button class="btn s" data-mp="${i}" type="button">🎨 Prompt</button>`:''}</div></div>`}).join('');
