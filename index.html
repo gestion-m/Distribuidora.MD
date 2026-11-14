@@ -744,7 +744,11 @@ async function ia(mode,data,ms=45000){const h={'content-type':'application/json'
 function leerMsg(t){const L=t.split(/\n/).map(x=>x.trim()).filter(Boolean),pr=/\$\s*([\d.]+(?:,\d{1,2})?)/,val=x=>{const m=pr.exec(x);return m?Math.round(parseFloat(m[1].replace(/\./g,'').replace(',','.'))):null};
   let costo=null;for(const l of L)if(/contado|efectivo/i.test(l)&&val(l)){costo=val(l);break}
   if(!costo)for(const l of L)if(val(l)){costo=val(l);break}
-  const rest=L.filter(l=>!pr.test(l));return[{nombre:(rest[0]||'').slice(0,80),descripcion:rest.slice(1).join(' ').slice(0,250),costo}]}
+  let rest=L.filter(l=>!pr.test(l));
+   if(!rest.length){/* mensaje de una sola línea: "TELEVISOR CMB 32" $220000" -> el nombre es la línea sin el precio */
+     rest=L.map(l=>l.replace(/(?:u\$s|usd|us\$)?\s*\$\s*[\d.,]+/ig,' ').replace(/\b(contado|efectivo|costo|precio|lista)\b\s*:?/ig,' ').replace(/\s+/g,' ').replace(/[\s\-–—:|=]+$/,'').trim()).filter(Boolean)}
+   let nom=(rest[0]||'');if(nom&&nom===nom.toUpperCase())nom=nom.replace(/[A-ZÁÉÍÓÚÑ]{4,}/g,w=>w[0]+w.slice(1).toLowerCase());
+   return[{nombre:nom.slice(0,80),descripcion:rest.slice(1).join(' ').slice(0,250),costo}]}
 let _mi=[],_shot=null,_shotUrl='',_cur=null;
 /* --- captura de la distribuidora: OCR + recorte de la foto --- */
 async function ocr(src,prog){if(!window.Tesseract)await new Promise((ok,no)=>{const t=document.createElement('script');t.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';t.onload=ok;t.onerror=no;document.head.appendChild(t)});
@@ -793,7 +797,7 @@ function drawM(){const el=$('mres');if(!el)return;const m=num('pm')||0,dl=dolar(
     try{localStorage.setItem('lastDist',dist)}catch(e){}
     $('pmsg').textContent='✔ '+L.length+' producto(s) guardado(s) con margen '+m+'%. Agregales la foto desde "Mis productos" (+ Foto).';drawM()};
   el.querySelectorAll('[data-mp]').forEach(b=>b.onclick=()=>{const x=_mi[b.dataset.mp],c=cst(x);promptGPT({name:x.nombre,cost:c,margin:m,photo:_shotUrl,nota:_shotUrl?'La imagen que adjunto es una captura de la lista del proveedor con varios modelos: usá SOLO "'+x.nombre+'" (tomá el equipo/caja de ese modelo). No incluyas otros modelos, ni los precios en dólares de la captura.':''})});
-  el.querySelectorAll('[data-mu]').forEach(b=>b.onclick=()=>{const x=_mi[b.dataset.mu],c=cst(x);_cur=+b.dataset.mu;{const dn=document.querySelector('[data-acc=nuevo]');if(dn)dn.open=true}$('pn').value=x.nombre;$('pc').value=c||'';$('pd').value=x.descripcion||'';if($('mdist')&&$('pdi'))setDist('pdi',$('mdist').value);$('pmsg').textContent='✔ Cargado desde el mensaje'+(x.usd?' (US$ '+x.usd+' pasados a pesos)':'')+'. Agregá la foto, revisá y guardá.';
+  el.querySelectorAll('[data-mu]').forEach(b=>b.onclick=()=>{const x=_mi[b.dataset.mu],c=cst(x);_cur=+b.dataset.mu;{const dn=document.querySelector('[data-acc=nuevo]');if(dn)dn.open=true}$('pn').value=x.nombre;$('pc').value=c||'';try{$('pn').scrollIntoView({behavior:'smooth',block:'center'})}catch(e){}$('pd').value=x.descripcion||'';if($('mdist')&&$('pdi'))setDist('pdi',$('mdist').value);$('pmsg').textContent='✔ Cargado desde el mensaje'+(x.usd?' (US$ '+x.usd+' pasados a pesos)':'')+'. Agregá la foto, revisá y guardá.';
     if(_shot&&!lista){try{if($('accfoto'))$('accfoto').open=true;const dt=new DataTransfer();dt.items.add(_shot);$('pf').files=dt.files;fotoIA='';$('pia').style.display='';$('pprev').innerHTML='';
       if(fb&&fb.fn){$('pmsg').textContent='✔ Datos cargados. ✨ Armando la foto con IA…';setTimeout(()=>$('pmej').click(),300)}else $('pmsg').textContent='✔ Datos cargados y foto recortada de la captura. Revisá y guardá.'}catch(e){}}
     else if(lista)$('pmsg').textContent+=' La captura tiene varios modelos: tocá "🎨 Prompt" para armar la foto en ChatGPT.';
